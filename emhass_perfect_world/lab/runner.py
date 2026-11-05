@@ -115,6 +115,12 @@ def publish_scoreboard(ha, archive, chain, tz, emhass_version):
         loss = publish.DEFAULT_LOSS
     s = publish.summarize(rows, by_epoch, loss, emhass_version)
     if s is None:
+        # încă niciun slot evaluat (fără provizorii): senzorul există, dar fără valoare
+        ha.post_state(publish.ENTITY, "unknown", {
+            "friendly_name": "EMHASS MaxControl Perfect World", "icon": "mdi:crystal-ball", "unit_of_measurement": "RON",
+            "status": "WAITING_FULL_HORIZON", "emhass_version": emhass_version,
+            "chain_next_slot_epoch": (chain.state or {}).get("next_epoch"),
+        })
         return None
     publish.write(chain.dir, s)
     attrs = publish.flatten(s)

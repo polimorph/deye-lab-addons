@@ -9,7 +9,7 @@ REQ_VERSION="$(opt emhass_version)"
 PROD_SLUG="$(opt production_addon_slug)"
 export LAB_LOG_LEVEL="$(opt log_level)"
 
-echo "[lab] pornesc EMHASS Perfect World 0.5.1"
+echo "[lab] pornesc EMHASS Perfect World"
 
 # 1. Versiunea țintă = versiunea EMHASS de producție (Supervisor API) sau cea fixată manual.
 if [ "$REQ_VERSION" = "auto" ] || [ -z "$REQ_VERSION" ]; then

@@ -1,3 +1,6 @@
+## 0.6.1
+- Senzorul scoreboard există și fără rezultate (stare unknown, status WAITING_FULL_HORIZON).
+
 ## 0.6.0
 - `publish.py`: scoreboard pe aceeași perioadă (doar sloturile evaluate în Perfect World) pentru Perfect World, real, STOCK PPC și STOCK Hydro V2.
 - Valoare = -(cost + pierdere fixă) - inventar SOC; L citit din acumulatorul v0.2.7; aceeași regulă de preț (import dacă lumea importă în slot, altfel export). Hydro V2 la tarif fix 1,23597 / 0,515.
