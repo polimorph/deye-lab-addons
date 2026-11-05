@@ -1,6 +1,7 @@
 """Adaptor EMHASS: TOT ce depinde de API-ul intern al lui EMHASS stă aici.
 Config = copia configului LIVE de producție (GET /get-config), nu o copie scrisă de mână.
 Nu scrie nimic în /share/emhass: datele EMHASS ale laboratorului stau în data_dir/emhass_data."""
+import hashlib
 import json
 import logging
 import os
@@ -140,3 +141,16 @@ async def solve(emhass_conf, params, runtime, logger):
         rh = inp.get("rh") if isinstance(inp, dict) else None
         if rh is not None and hasattr(rh, "close"):
             await rh.close()
+
+
+def config_hash(config):
+    """Amprenta configului EMHASS live: o schimbare de config în lanț trebuie să fie vizibilă pe rânduri."""
+    return hashlib.sha1(json.dumps(config, sort_keys=True, default=str).encode()).hexdigest()[:12]
+
+
+def first_row_solver(emhass_conf, params, logger):
+    """Funcție async runtime -> primul rând al planului (dict), pentru lanțul slot cu slot."""
+    async def run(runtime):
+        df = await solve(emhass_conf, params, runtime, logger)
+        return df.iloc[0].to_dict()
+    return run

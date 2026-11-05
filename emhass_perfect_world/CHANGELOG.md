@@ -1,3 +1,7 @@
+## 0.5.0
+- `perfect.py`: lanț Perfect World slot cu slot (orizont ca producția, PV/load reale, SOC propriu), rezultate în `results/` (rânduri pe slot + `day_<zi>.json` cu ScenarioResult). Fără rezultate provizorii: un slot se rezolvă doar când arhiva acoperă tot orizontul.
+- Fiecare rând poartă `emhass_version`, `era`, `config_hash`.
+
 ## 0.4.1
 - Prețurile 'unknown' din capturi se completează (cel mult 4 sloturi) doar ca intrare pentru solver; slotul e marcat `price_filled` (costul nu se evaluează, ca în auditor).
 

@@ -1,4 +1,5 @@
 """Runner laborator: arhivează sloturile de captură (pas 3). Pasul 4 adaugă soluțiile Perfect World."""
+import asyncio
 import json
 import logging
 import os
@@ -8,7 +9,7 @@ from importlib.metadata import version
 
 from .archive import SlotArchive
 from .ha import HA
-from . import probe, solve_probe
+from . import adapter, perfect, probe, solve_probe
 from .schema import SchemaError, normalize_slot
 
 OPTS_PATH = os.environ.get("LAB_OPTIONS", "/data/options.json")
@@ -17,6 +18,8 @@ DEFAULTS = {
     "data_dir": "/share/deye_lab/pw_lab",
     "poll_seconds": 30,
     "backfill_days": 10,
+    "chain_start": "2026-11-04T15:15:00+02:00",
+    "chain_every_seconds": 300,
     "log_level": "info",
 }
 
@@ -73,6 +76,35 @@ def write_status(root, **kw):
     os.replace(tmp, os.path.join(root, "status.json"))
 
 
+def run_chain(opts, archive, chain, tz, emhass_version):
+    """Un pas de lanț: înaintează cât permite arhiva (orizont acoperit), apoi rescrie agregatele pe zi."""
+    if chain.state is None:
+        start = int(datetime.fromisoformat(opts["chain_start"]).timestamp()) // 900 * 900
+        row = next((r for d in archive.days() for r in archive.read_day(d) if r["slot_start_epoch"] == start), None)
+        soc = row.get("actual_soc_start_pct") if row else None
+        if not isinstance(soc, (int, float)):
+            log.warning("chain: lipsește slotul de start %s sau SOC-ul lui; lanțul nu pornește", opts["chain_start"])
+            return 0
+        chain.init(start, soc / 100)
+        log.info("chain: pornit la %s cu SOC %.1f%%", opts["chain_start"], soc)
+
+    async def go():
+        clog = logging.getLogger("lab.chain")
+        emhass_conf, config, params = await adapter.make_context(opts["data_dir"], clog)
+        solver = adapter.first_row_solver(emhass_conf, params, clog)
+        return await perfect.advance(
+            chain, archive, tz, solver, emhass_version, log=log,
+            row_extra={"config_hash": adapter.config_hash(config)},
+        )
+
+    n = asyncio.run(asyncio.wait_for(go(), 900))
+    if n:
+        days = sorted({d for d in archive.days()})
+        perfect.write_day_results(chain, tz, emhass_version, days)
+        log.info("chain: %d sloturi procesate, următorul %s", n, chain.state["next_epoch"])
+    return n
+
+
 def selftest():
     log.info("emhass %s", version("emhass"))
     import emhass.optimization  # noqa: F401  (dependențele grele: cvxpy, pandas)
@@ -104,7 +136,15 @@ def main():
     if solve_probe.needs_run(root):
         rep = solve_probe.run(root, tz)
         log.info("solve_probe: ok=%s %s", rep.get("ok"), rep.get("error", ""))
+    chain = perfect.Chain(root)
+    next_chain = 0.0
     while True:
+        if time.time() >= next_chain:
+            next_chain = time.time() + int(opts["chain_every_seconds"])
+            try:
+                run_chain(opts, archive, chain, tz, emhass_version)
+            except Exception as exc:  # noqa: BLE001 — lanțul nu trebuie să oprească arhivarea
+                log.warning("chain: %r", exc)
         try:
             st = ha.state(opts["capture_entity"])
             if ingest(archive, st["state"], st.get("attributes", {}), tz):
@@ -121,6 +161,7 @@ def main():
             last_day=days[-1] if days else None,
             last_day_coverage=archive.coverage(days[-1], tz) if days else None,
             last_error=last_err,
+            chain=chain.state,
         )
         time.sleep(int(opts["poll_seconds"]))
 
