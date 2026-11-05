@@ -1,0 +1,62 @@
+import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "emhass_perfect_world"))
+from lab import publish  # noqa: E402
+
+PI, PE = 1.5, 0.3
+
+
+def arch(epoch, **kw):
+    a = {"slot_start_epoch": epoch, "ppc_import_price_ron_kwh": PI, "ppc_export_price_ron_kwh": PE,
+         "actual_ppc_net_cost_ron": 0.1, "actual_grid_import_kwh": 0.1, "actual_grid_export_kwh": 0.0,
+         "actual_soc_end_pct": 60, "stock_ppc_net_cost_ron": 0.2, "stock_grid_import_kwh": 0.0,
+         "stock_grid_export_kwh": 0.1, "stock_hydro_v2_net_cost_ron": 0.05, "stock_soc_end_pct": 50}
+    a.update(kw)
+    return a
+
+
+def row(epoch, imp, exp, cost, soc_end=0.5, **kw):
+    r = {"slot_start_epoch": epoch, "skipped": False, "scored": True, "import_kwh": imp, "export_kwh": exp,
+         "net_cost_ron": cost, "soc_end": soc_end}
+    r.update(kw)
+    return r
+
+
+class T(unittest.TestCase):
+    def test_loss_price_rule_and_inventory(self):
+        rows = [row(0, 0.2, 0.0, 0.3), row(900, 0.0, 0.1, -0.03, soc_end=0.4)]
+        by = {0: arch(0), 900: arch(900)}
+        s = publish.summarize(rows, by, 0.03, "0.18.8")
+        pw = s["worlds"]["PERFECT"]
+        self.assertAlmostEqual(pw["cost_ron"], 0.27)
+        self.assertAlmostEqual(pw["fixed_loss_ron"], 0.03 * PI + 0.03 * PE, places=3)
+        inv = (60 - 40) / 100 * 10.24 * 0.99 * 0.97 * PE
+        self.assertAlmostEqual(pw["inventory_ron"], inv, places=3)
+        self.assertAlmostEqual(pw["value_ron"], -(0.27 + 0.03 * PI + 0.03 * PE) - inv, places=3)
+        self.assertAlmostEqual(s["worlds"]["STOCK_PPC"]["fixed_loss_ron"], 2 * 0.03 * PE, places=3)
+        self.assertEqual(s["worlds"]["REAL"]["fixed_loss_ron"], 0)
+        self.assertEqual(s["worlds"]["REAL"]["inventory_ron"], 0)
+        self.assertAlmostEqual(s["worlds"]["STOCK_HYDRO_V2"]["fixed_loss_ron"], 2 * 0.03 * 0.515, places=3)
+
+    def test_same_period_and_unscored_excluded(self):
+        rows = [row(0, 0.0, 0.0, 0.0), row(900, 0.0, 0.0, 0.0, scored=False), row(1800, 0, 0, 0, skipped=True)]
+        by = {0: arch(0), 900: arch(900), 1800: arch(1800)}
+        s = publish.summarize(rows, by, 0.03, "x")
+        self.assertEqual(s["slots_counted"], 1)
+        self.assertAlmostEqual(s["worlds"]["REAL"]["cost_ron"], 0.1)
+
+    def test_unknown_stock_soc_no_inventory(self):
+        s = publish.summarize([row(0, 0, 0, 0)], {0: arch(0, stock_soc_end_pct="unknown")}, 0.03, "x")
+        self.assertEqual(s["worlds"]["STOCK_PPC"]["inventory_ron"], 0)
+        self.assertIsNone(s["worlds"]["STOCK_PPC"]["soc_end_pct"])
+
+    def test_empty_and_flatten(self):
+        self.assertIsNone(publish.summarize([], {}, 0.03, "x"))
+        f = publish.flatten(publish.summarize([row(0, 0, 0, 0)], {0: arch(0)}, 0.03, "x"))
+        self.assertIn("perfect_value_ron", f)
+
+
+if __name__ == "__main__":
+    unittest.main()

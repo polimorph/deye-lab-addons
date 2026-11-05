@@ -1,3 +1,9 @@
+## 0.6.0
+- `publish.py`: scoreboard pe aceeași perioadă (doar sloturile evaluate în Perfect World) pentru Perfect World, real, STOCK PPC și STOCK Hydro V2.
+- Valoare = -(cost + pierdere fixă) - inventar SOC; L citit din acumulatorul v0.2.7; aceeași regulă de preț (import dacă lumea importă în slot, altfel export). Hydro V2 la tarif fix 1,23597 / 0,515.
+- Senzor `sensor.emhass_perfect_world_scoreboard` (republicat la fiecare ciclu) + `results/scoreboard.json`.
+- Fără `-0.0` în rândurile de lanț.
+
 ## 0.5.1
 - Autotest unic al lanțului (04.11 00:00–13:45, orizont acoperit) în `selftest/`, comparat cu lumea reală.
 

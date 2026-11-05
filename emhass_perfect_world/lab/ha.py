@@ -30,3 +30,11 @@ class HA:
         params = {"filter_entity_id": entity_id, "significant_changes_only": "0", "end_time": end_iso}
         res = self._get("/history/period/" + urllib.parse.quote(start_iso, safe=""), params, timeout=180)
         return res[0] if res else []
+
+    def post_state(self, entity_id, state, attributes):
+        """Publică (suprascrie) starea unei entități. Dispare la repornirea HA: se republică periodic."""
+        body = json.dumps({"state": state, "attributes": attributes}).encode()
+        req = urllib.request.Request(self.base + "/states/" + entity_id, data=body, method="POST",
+                                     headers={"Authorization": "Bearer " + self.token, "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status

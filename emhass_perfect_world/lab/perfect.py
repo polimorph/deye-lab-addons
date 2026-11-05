@@ -75,9 +75,9 @@ def realize(first, slot0):
     p_imp, p_exp = float(slot0["ppc_import_price_ron_kwh"]), float(slot0["ppc_export_price_ron_kwh"])
     batt_w = float(first["P_batt"])               # W; pozitiv = descărcare
     return {
-        "import_kwh": round(imp, 6), "export_kwh": round(exp, 6),
-        "batt_charge_kwh": round(max(-batt_w, 0.0) * 0.25 / 1000, 6),
-        "batt_discharge_kwh": round(max(batt_w, 0.0) * 0.25 / 1000, 6),
+        "import_kwh": round(imp, 6) + 0.0, "export_kwh": round(exp, 6) + 0.0,
+        "batt_charge_kwh": round(max(-batt_w, 0.0) * 0.25 / 1000, 6) + 0.0,
+        "batt_discharge_kwh": round(max(batt_w, 0.0) * 0.25 / 1000, 6) + 0.0,
         "pv_curtailed_kwh": round(float(first.get("P_PV_curtailment", 0.0)) * 0.25 / 1000, 6),
         "net_cost_ron": round(imp * p_imp - exp * p_exp, 6),
         "soc_end": float(first["SOC_opt"]),

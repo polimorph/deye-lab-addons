@@ -9,7 +9,7 @@ from importlib.metadata import version
 
 from .archive import SlotArchive
 from .ha import HA
-from . import adapter, perfect, probe, solve_probe
+from . import adapter, perfect, probe, publish, solve_probe
 from .schema import SchemaError, normalize_slot
 
 OPTS_PATH = os.environ.get("LAB_OPTIONS", "/data/options.json")
@@ -105,6 +105,24 @@ def run_chain(opts, archive, chain, tz, emhass_version):
     return n
 
 
+def publish_scoreboard(ha, archive, chain, tz, emhass_version):
+    """Cumul pe aceeași perioadă pentru toate lumile -> results/scoreboard.json + senzor HA (republicat periodic)."""
+    rows = [r for d in archive.days() for r in chain.read_slots(d)]
+    by_epoch = {r["slot_start_epoch"]: r for d in archive.days() for r in archive.read_day(d)}
+    try:
+        loss = float(ha.state(publish.LOSS_ENTITY)["attributes"].get("loss_kwh_per_slot", publish.DEFAULT_LOSS))
+    except Exception:  # noqa: BLE001 — L implicit dacă acumulatorul v0.2.7 lipsește
+        loss = publish.DEFAULT_LOSS
+    s = publish.summarize(rows, by_epoch, loss, emhass_version)
+    if s is None:
+        return None
+    publish.write(chain.dir, s)
+    attrs = publish.flatten(s)
+    attrs.update(unit_of_measurement="RON", friendly_name="EMHASS MaxControl Perfect World", icon="mdi:crystal-ball")
+    ha.post_state(publish.ENTITY, str(s["value_ron"]), attrs)
+    return s
+
+
 def chain_selftest(opts, archive, tz, emhass_version):
     """Autotest unic pe dimineața de 04.11 (orizont acoperit): lanț separat în data_dir/selftest, comparat cu lumea reală."""
     root = os.path.join(opts["data_dir"], "selftest")
@@ -197,6 +215,10 @@ def main():
                 run_chain(opts, archive, chain, tz, emhass_version)
             except Exception as exc:  # noqa: BLE001 — lanțul nu trebuie să oprească arhivarea
                 log.warning("chain: %r", exc)
+            try:
+                publish_scoreboard(ha, archive, chain, tz, emhass_version)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("publish: %r", exc)
         try:
             st = ha.state(opts["capture_entity"])
             if ingest(archive, st["state"], st.get("attributes", {}), tz):
