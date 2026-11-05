@@ -1,5 +1,5 @@
 name: EMHASS Perfect World (lab)
-version: "0.1.0"
+version: "0.2.0"
 slug: emhass_perfect_world
 description: Același EMHASS ca producția, rulat pe PV și consum perfecte, pentru scoreboard.
 url: https://github.com/polimorph/deye-lab-addons
@@ -8,15 +8,25 @@ arch:
   - aarch64
 init: false
 startup: application
-boot: manual
+boot: auto
 homeassistant_api: true
 hassio_api: true
 hassio_role: manager
+map:
+  - share:rw
 options:
   emhass_version: auto
   production_addon_slug: 5b918bf2_emhass
+  capture_entity: sensor.deye_economic_auditor_scenario_capture
+  data_dir: /share/deye_lab/pw_lab
+  poll_seconds: 30
+  backfill_days: 10
   log_level: info
 schema:
   emhass_version: str
   production_addon_slug: str
+  capture_entity: str
+  data_dir: str
+  poll_seconds: int(5,600)
+  backfill_days: int(1,10)
   log_level: list(debug|info|warning|error)
