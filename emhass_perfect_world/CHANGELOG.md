@@ -1,3 +1,6 @@
+## 0.3.0
+- Probe/Sentinel: la fiecare versiune EMHASS scrie `probe.json` (semnături, construcția emhass_conf, config producție fără secrete, citit doar-citire din /share/emhass/config.json).
+
 ## 0.2.2
 - Fix backfill: API-ul REST de istoric întoarce doar 24 h dacă lipsește `end_time`; acum se interoghează pe felii de 24 h până la acum.
 

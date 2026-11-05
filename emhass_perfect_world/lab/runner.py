@@ -8,6 +8,7 @@ from importlib.metadata import version
 
 from .archive import SlotArchive
 from .ha import HA
+from . import probe
 from .schema import SchemaError, normalize_slot
 
 OPTS_PATH = os.environ.get("LAB_OPTIONS", "/data/options.json")
@@ -83,6 +84,12 @@ def main():
     root = opts["data_dir"]
     os.makedirs(root, exist_ok=True)
     selftest()
+    if probe.needs_run(root):
+        try:
+            probe.run(root)
+            log.info("probe.json scris (versiune nouă de EMHASS)")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("probe eșuat: %s", exc)
     ha = HA()
     tz = ha.config()["time_zone"]
     archive = SlotArchive(root)
