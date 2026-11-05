@@ -9,7 +9,7 @@ REQ_VERSION="$(opt emhass_version)"
 PROD_SLUG="$(opt production_addon_slug)"
 export LAB_LOG_LEVEL="$(opt log_level)"
 
-echo "[lab] pornesc EMHASS Perfect World 0.3.0"
+echo "[lab] pornesc EMHASS Perfect World 0.3.1"
 
 # 1. Versiunea țintă = versiunea EMHASS de producție (Supervisor API) sau cea fixată manual.
 if [ "$REQ_VERSION" = "auto" ] || [ -z "$REQ_VERSION" ]; then
@@ -21,6 +21,8 @@ else
   TARGET="$REQ_VERSION"
   echo "[lab] versiune fixată manual: ${TARGET}"
 fi
+
+TARGET="${TARGET#v}"   # add-on-ul de producție raportează "v0.18.8"; PyPI/importlib folosesc "0.18.8"
 
 # 2. Venv persistent cu exact acea versiune.
 [ -x "$VENV/bin/python" ] || python3 -m venv "$VENV"

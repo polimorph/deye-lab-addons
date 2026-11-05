@@ -1,5 +1,5 @@
 name: EMHASS Perfect World (lab)
-version: "0.3.0"
+version: "0.3.1"
 slug: emhass_perfect_world
 description: Același EMHASS ca producția, rulat pe PV și consum perfecte, pentru scoreboard.
 url: https://github.com/polimorph/deye-lab-addons

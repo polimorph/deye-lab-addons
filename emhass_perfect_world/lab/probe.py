@@ -6,9 +6,11 @@ import inspect
 import json
 import os
 import re
+import urllib.request
 from importlib.metadata import version
 
-PROD_CONFIG = "/share/emhass/config.json"   # doar citire
+PROBE_REV = 2
+PROD_API = "http://5b918bf2-emhass:5000"   # doar GET-uri, nu se apelează nicio acțiune
 SECRET_KEY = re.compile(r"key|token|password|secret|username|latitude|longitude|altitude", re.I)
 
 
@@ -53,6 +55,9 @@ def run(data_dir):
         "utils": lambda: _funcs("emhass.utils", prefixes=("build_", "get_root", "get_yaml", "get_logger", "treat_runtimeparams", "set_df_index")),
         "web_server_emhass_conf": lambda: _grep_source("emhass.web_server", r"emhass_conf\[|emhass_conf\s*=|build_params|build_config|build_secrets", limit=60),
         "web_server_args": lambda: _grep_source("emhass.web_server", r"add_argument|--addon|--data_path|--config", limit=30),
+        "web_server_routes": lambda: _grep_source("emhass.web_server", r"@app\.(route|get|post)|add_url_rule", limit=40),
+        "web_server_setup_source": lambda: inspect.getsource(importlib.import_module("emhass.web_server")).splitlines()[1085:1215],
+        "share_emhass_files": lambda: sorted(os.listdir("/share/emhass")) if os.path.isdir("/share/emhass") else "lipsă",
         "treat_runtimeparams_keys": lambda: sorted(set(re.findall(r'"([a-z_]+)"', inspect.getsource(importlib.import_module("emhass.utils").treat_runtimeparams))))[:400],
     }
     for k, fn in steps.items():
@@ -60,14 +65,16 @@ def run(data_dir):
             rep[k] = fn()
         except Exception as exc:  # noqa: BLE001 — sentinel: raportăm, nu oprim
             rep[k] = f"EROARE: {exc!r}"
-    # configul de producție (doar citire), fără chei sensibile
-    try:
-        with open(PROD_CONFIG, encoding="utf-8") as fh:
-            cfg = json.load(fh)
-        rep["prod_config_public"] = {k: v for k, v in cfg.items() if not SECRET_KEY.search(k)}
-        rep["prod_config_keys_total"] = len(cfg)
-    except Exception as exc:  # noqa: BLE001
-        rep["prod_config_public"] = f"EROARE: {exc!r}"
+    # configul de producție, prin API-ul intern (GET), fără chei sensibile
+    for route in ("/get-config", "/get-config/defaults"):
+        try:
+            with urllib.request.urlopen(PROD_API + route, timeout=15) as resp:
+                cfg = json.load(resp)
+            rep["prod" + route.replace("/", "_")] = {k: v for k, v in cfg.items() if not SECRET_KEY.search(k)} \
+                if isinstance(cfg, dict) else cfg
+        except Exception as exc:  # noqa: BLE001
+            rep["prod" + route.replace("/", "_")] = f"EROARE: {exc!r}"
+    rep["probe_rev"] = PROBE_REV
     path = os.path.join(data_dir, "probe.json")
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
@@ -79,6 +86,7 @@ def run(data_dir):
 def needs_run(data_dir):
     try:
         with open(os.path.join(data_dir, "probe.json"), encoding="utf-8") as fh:
-            return json.load(fh).get("emhass_version") != version("emhass")
+            d = json.load(fh)
+            return d.get("emhass_version") != version("emhass") or d.get("probe_rev") != PROBE_REV
     except (OSError, ValueError):
         return True

@@ -1,3 +1,7 @@
+## 0.3.1
+- Probe rev 2: config producție prin GET /get-config (nu din fișier), rute web_server, construcția emhass_conf.
+- Fix: versiunea țintă fără prefixul `v` (nu mai reinstalează EMHASS la fiecare pornire).
+
 ## 0.3.0
 - Probe/Sentinel: la fiecare versiune EMHASS scrie `probe.json` (semnături, construcția emhass_conf, config producție fără secrete, citit doar-citire din /share/emhass/config.json).
 
