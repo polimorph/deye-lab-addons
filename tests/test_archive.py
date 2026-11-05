@@ -1,4 +1,5 @@
-import json, os, sys, tempfile, threading, unittest, urllib.parse
+import json, os, sys, tempfile, threading, time, unittest, urllib.parse
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "emhass_perfect_world"))
@@ -20,6 +21,7 @@ def attrs(i, **kw):
 
 class Fake(BaseHTTPRequestHandler):
     hist = []
+    calls = []
     cur = None
 
     def do_GET(self):
@@ -31,7 +33,14 @@ class Fake(BaseHTTPRequestHandler):
             body = Fake.cur
         elif path.startswith("/history/period/"):
             assert "significant_changes_only=0" in path
-            body = [Fake.hist]
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)  # din calea brută, o singură decodare
+            assert "significant_changes_only" in q and q["significant_changes_only"] == ["0"]
+            assert "end_time" in q, "HA real taie la 24 h fără end_time"
+            lo = datetime.fromisoformat(path.split("/history/period/")[1].split("?")[0]).timestamp()
+            hi = datetime.fromisoformat(q["end_time"][0]).timestamp()
+            Fake.calls.append((lo, hi))
+            # ca HA real: doar rândurile din fereastra [start, end_time)
+            body = [[s for s in Fake.hist if lo <= s["t"] < hi]]
         else:
             self.send_error(404); return
         data = json.dumps(body).encode()
@@ -65,9 +74,10 @@ class T(unittest.TestCase):
 
     def test_backfill_poll_dedup_revision(self):
         with tempfile.TemporaryDirectory() as d:
-            Fake.hist = [{"state": "VALID", "attributes": attrs(i)} for i in range(3)] + \
-                        [{"state": "VALID", "attributes": attrs(2)},              # duplicat
-                         {"state": "unavailable", "attributes": {}}]
+            now = time.time()
+            Fake.hist = [{"t": now - 600 - i, "state": "VALID", "attributes": attrs(i)} for i in range(3)] + \
+                        [{"t": now - 500, "state": "VALID", "attributes": attrs(2)},   # duplicat
+                         {"t": now - 400, "state": "unavailable", "attributes": {}}]
             ar = SlotArchive(d)
             self.assertEqual(runner.backfill(self.ha, ar, "sensor.x", 10, TZ), 3)
             Fake.cur = {"state": "VALID", "attributes": attrs(3)}
@@ -80,6 +90,18 @@ class T(unittest.TestCase):
             self.assertEqual(len(rows), 4)
             self.assertEqual(rows[3]["load_kwh"], 9.9); self.assertEqual(rows[3]["rev"], 2)
             self.assertFalse(SlotArchive(d).add(rows[3]))  # reindexat corect
+
+    def test_backfill_covers_whole_window(self):
+        """Regresie 0.2.1: fără end_time HA întoarce doar 24 h; sloturi vechi de 9 zile trebuie găsite."""
+        with tempfile.TemporaryDirectory() as d:
+            now = time.time()
+            Fake.hist = [{"t": now - 86400 * k - 3600, "state": "VALID",
+                          "attributes": attrs(0, slot_start_epoch=int(now - 86400 * k - 3600) // 900 * 900)}
+                         for k in range(9)]
+            Fake.calls.clear()
+            self.assertEqual(runner.backfill(self.ha, SlotArchive(d), "sensor.x", 10, TZ), 9)
+            self.assertEqual(len(Fake.calls), 10)
+            self.assertTrue(all(hi - lo <= 86400 for lo, hi in Fake.calls))
 
     def test_corrupt_line_ignored(self):
         with tempfile.TemporaryDirectory() as d:

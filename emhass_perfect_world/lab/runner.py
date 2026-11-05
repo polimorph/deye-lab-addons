@@ -49,12 +49,17 @@ def ingest(archive, state, attrs, tz):
 
 
 def backfill(ha, archive, entity, days, tz):
-    start = (datetime.now(timezone.utc) - timedelta(days=days)).replace(microsecond=0)
+    """Istoric pe felii de 24 h: API-ul REST întoarce doar 24 h de la start dacă lipsește end_time."""
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    start = now - timedelta(days=days)
     new = 0
-    for st in ha.history(entity, start.isoformat()):
-        if st.get("state") in ("unknown", "unavailable"):
-            continue
-        new += ingest(archive, st["state"], st.get("attributes", {}), tz)
+    while start < now:
+        end = min(start + timedelta(days=1), now)
+        for st in ha.history(entity, start.isoformat(), end.isoformat()):
+            if st.get("state") in ("unknown", "unavailable"):
+                continue
+            new += ingest(archive, st["state"], st.get("attributes", {}), tz)
+        start = end
     log.info("backfill %sz: %d sloturi noi (total %d)", days, new, len(archive))
     return new
 

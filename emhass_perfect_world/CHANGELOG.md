@@ -1,3 +1,6 @@
+## 0.2.2
+- Fix backfill: API-ul REST de istoric întoarce doar 24 h dacă lipsește `end_time`; acum se interoghează pe felii de 24 h până la acum.
+
 ## 0.2.1
 - Fix backfill: istoricul se cere cu `significant_changes_only=0` (altfel returna un singur rând, fiindcă starea senzorului nu se schimbă).
 
