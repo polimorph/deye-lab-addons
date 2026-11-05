@@ -113,11 +113,19 @@ class T(unittest.TestCase):
     def _row(self, i, exp=1.5, imp=1.9):
         return attrs(i, ppc_import_price_ron_kwh=imp, ppc_export_price_ron_kwh=exp, load_kwh=0.1, pv_actual_kwh=0.25)
 
-    def test_slot_inputs_stops_at_gap(self):
-        rows = [self._row(0), self._row(1), self._row(3)]  # lipsește slotul 2
+    def test_slot_inputs_gaps_and_price_fill(self):
+        rows = [self._row(0), self._row(1), self._row(3)]  # lipsește slotul 2 (load/PV) -> secvența se oprește
         self.assertEqual(len(adapter.slot_inputs(rows, BASE, 10)), 2)
-        rows[1]["ppc_export_price_ron_kwh"] = "unknown"      # preț invalid oprește secvența
-        self.assertEqual(len(adapter.slot_inputs(rows, BASE, 10)), 1)
+        rows = [self._row(i) for i in range(4)]
+        rows[1]["ppc_export_price_ron_kwh"] = "unknown"       # un singur preț lipsă: completat, marcat
+        got = adapter.slot_inputs(rows, BASE, 10)
+        self.assertEqual(len(got), 4)
+        self.assertEqual([r["price_filled"] for r in got], [False, True, False, False])
+        self.assertEqual(got[1]["ppc_export_price_ron_kwh"], 1.5)
+        rows = [self._row(i) for i in range(12)]               # gol lung la coadă: după 4 sloturi de la ultimul preț valid
+        for r in rows[2:]:                                     # secvența se oprește (slotul 1 valid, 2..5 completate)
+            r["ppc_import_price_ron_kwh"] = "unknown"
+        self.assertEqual(len(adapter.slot_inputs(rows, BASE, 12)), 6)
 
     def test_build_runtime_matches_production_shape(self):
         slots = [self._row(i) for i in range(4)]

@@ -1,3 +1,6 @@
+## 0.4.1
+- Prețurile 'unknown' din capturi se completează (cel mult 4 sloturi) doar ca intrare pentru solver; slotul e marcat `price_filled` (costul nu se evaluează, ca în auditor).
+
 ## 0.4.0
 - `adapter.py`: context EMHASS din configul LIVE de producție, payload ca MPC v4.5 (fără scalare PV/taxă risc în Perfect World), solve naive-mpc-optim.
 - `solve_probe.py`: un solve pe o zi reală din arhivă → `solve_probe.json`.

@@ -52,14 +52,31 @@ def _num(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
+MAX_PRICE_GAP = 4   # cel mult atâtea sloturi consecutive cu preț lipsă sunt completate
+
+
 def slot_inputs(rows, start_epoch, n):
-    """Sloturi consecutive din arhivă (rânduri deja sortate) începând de la start_epoch; se oprește la prima lipsă."""
+    """Sloturi consecutive din arhivă începând de la start_epoch; se oprește la prima lipsă de load/PV.
+    Prețurile lipsă (capturile auditorului au 'unknown' la unele limite de slot) se completează cu cel mai apropiat
+    preț valid, DOAR ca intrare pentru solver. Slotul primește `price_filled=True`: costul lui nu se evaluează
+    (în auditor aceleași sloturi au cost 0 pentru toate lumile)."""
     by = {r["slot_start_epoch"]: r for r in rows}
-    out = []
+    seq = []
     for k in range(n):
         r = by.get(start_epoch + 900 * k)
-        if not r or not all(_num(r.get(x)) for x in ("load_kwh", "pv_actual_kwh", "ppc_import_price_ron_kwh", "ppc_export_price_ron_kwh")):
+        if not r or not all(_num(r.get(x)) for x in ("load_kwh", "pv_actual_kwh")):
             break
+        seq.append(dict(r))
+    ok = [all(_num(r.get(x)) for x in ("ppc_import_price_ron_kwh", "ppc_export_price_ron_kwh")) for r in seq]
+    out = []
+    for i, r in enumerate(seq):
+        r["price_filled"] = not ok[i]
+        if not ok[i]:
+            near = next((j for d in range(1, MAX_PRICE_GAP + 1) for j in (i - d, i + d) if 0 <= j < len(seq) and ok[j]), None)
+            if near is None:
+                break   # gol prea lung: oprim secvența aici
+            r["ppc_import_price_ron_kwh"] = seq[near]["ppc_import_price_ron_kwh"]
+            r["ppc_export_price_ron_kwh"] = seq[near]["ppc_export_price_ron_kwh"]
         out.append(r)
     return out
 

@@ -10,7 +10,7 @@ from importlib.metadata import version
 from . import adapter
 from .archive import SlotArchive
 
-PROBE_REV = 1
+PROBE_REV = 2
 
 
 def needs_run(data_dir):
@@ -37,7 +37,7 @@ async def _run(data_dir, tz):
         # începem la prima felie a zilei complete de la ora 12:00 locală (+ 48 de sloturi de la miezul nopții)
         first = archive.read_day(day)[0]["slot_start_epoch"] + 48 * 900
         slots = adapter.slot_inputs(rows, first, adapter.MAX_HORIZON)
-        rep.update(day=day, start_epoch=first, horizon=len(slots))
+        rep.update(day=day, start_epoch=first, horizon=len(slots), price_filled=sum(1 for r in slots if r['price_filled']))
         soc0 = slots[0]["actual_soc_start_pct"] / 100
         runtime, _ = adapter.build_runtime(slots, soc0)
         rep["runtime_head"] = {k: (v[:4] if isinstance(v, list) else v) for k, v in runtime.items()}
