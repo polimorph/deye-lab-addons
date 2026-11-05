@@ -1,3 +1,6 @@
+## 0.5.1
+- Autotest unic al lanțului (04.11 00:00–13:45, orizont acoperit) în `selftest/`, comparat cu lumea reală.
+
 ## 0.5.0
 - `perfect.py`: lanț Perfect World slot cu slot (orizont ca producția, PV/load reale, SOC propriu), rezultate în `results/` (rânduri pe slot + `day_<zi>.json` cu ScenarioResult). Fără rezultate provizorii: un slot se rezolvă doar când arhiva acoperă tot orizontul.
 - Fiecare rând poartă `emhass_version`, `era`, `config_hash`.

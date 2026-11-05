@@ -105,6 +105,54 @@ def run_chain(opts, archive, chain, tz, emhass_version):
     return n
 
 
+def chain_selftest(opts, archive, tz, emhass_version):
+    """Autotest unic pe dimineața de 04.11 (orizont acoperit): lanț separat în data_dir/selftest, comparat cu lumea reală."""
+    root = os.path.join(opts["data_dir"], "selftest")
+    marker = os.path.join(root, f"selftest_{emhass_version}.json")
+    if os.path.exists(marker):
+        return
+    os.makedirs(root, exist_ok=True)
+    start = int(datetime.fromisoformat("2026-11-04T00:00:00+02:00").timestamp())
+    rows = {r["slot_start_epoch"]: r for r in archive.read_day("2026-11-04")}
+    if start not in rows or not isinstance(rows[start].get("actual_soc_start_pct"), (int, float)):
+        log.warning("selftest: lipsește 04.11 00:00")
+        return
+    chain = perfect.Chain(root)
+    chain.init(start, rows[start]["actual_soc_start_pct"] / 100)
+
+    async def go():
+        clog = logging.getLogger("lab.selftest")
+        emhass_conf, config, params = await adapter.make_context(opts["data_dir"], clog)
+        solver = adapter.first_row_solver(emhass_conf, params, clog)
+        return await perfect.advance(chain, archive, tz, solver, emhass_version, max_slots=56,
+                                     row_extra={"config_hash": adapter.config_hash(config)})
+
+    t0 = time.time()
+    n = asyncio.run(asyncio.wait_for(go(), 900))
+    lab = chain.read_slots("2026-11-04")
+    real = [rows[r["slot_start_epoch"]] for r in lab if not r.get("skipped")]
+    num = lambda v: v if isinstance(v, (int, float)) else 0.0
+    rep = {
+        "emhass_version": emhass_version, "slots": n, "seconds": round(time.time() - t0, 1),
+        "lab_cost_ron": round(sum(r["net_cost_ron"] for r in lab if not r.get("skipped")), 4),
+        "real_cost_ron": round(sum(num(r["actual_ppc_net_cost_ron"]) for r in real), 4),
+        "lab_import_kwh": round(sum(r["import_kwh"] for r in lab if not r.get("skipped")), 3),
+        "real_import_kwh": round(sum(num(r["actual_grid_import_kwh"]) for r in real), 3),
+        "lab_export_kwh": round(sum(r["export_kwh"] for r in lab if not r.get("skipped")), 3),
+        "real_export_kwh": round(sum(num(r["actual_grid_export_kwh"]) for r in real), 3),
+        "soc_start_pct": round(lab[0]["soc_start"] * 100, 1) if lab else None,
+        "lab_soc_end_pct": round(lab[-1]["soc_end"] * 100, 1) if lab else None,
+        "real_soc_end_pct": real[-1].get("actual_soc_end_pct") if real else None,
+        "skipped": sum(1 for r in lab if r.get("skipped")),
+        "price_filled": sum(1 for r in lab if not r.get("skipped") and not r.get("scored")),
+        "horizon_truncated": sum(1 for r in lab if r.get("horizon_truncated")),
+        "statuses": sorted({r.get("optim_status", "") for r in lab if not r.get("skipped")}),
+    }
+    with open(marker, "w", encoding="utf-8") as fh:
+        json.dump(rep, fh, indent=1)
+    log.info("selftest lanț: %s", rep)
+
+
 def selftest():
     log.info("emhass %s", version("emhass"))
     import emhass.optimization  # noqa: F401  (dependențele grele: cvxpy, pandas)
@@ -136,6 +184,10 @@ def main():
     if solve_probe.needs_run(root):
         rep = solve_probe.run(root, tz)
         log.info("solve_probe: ok=%s %s", rep.get("ok"), rep.get("error", ""))
+    try:
+        chain_selftest(opts, archive, tz, emhass_version)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("selftest lanț eșuat: %r", exc)
     chain = perfect.Chain(root)
     next_chain = 0.0
     while True:
