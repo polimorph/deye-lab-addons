@@ -20,6 +20,22 @@ SCENARIOS = {
 }
 
 
+def num(v):
+    """Număr din atribut HA: HA serializează valorile foarte mici ca șir ('1e-05'); 'unknown'/bool/nan -> None."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        f = float(v)
+    elif isinstance(v, str):
+        try:
+            f = float(v)
+        except ValueError:
+            return None
+    else:
+        return None
+    return f if f == f and f not in (float("inf"), float("-inf")) else None
+
+
 class SchemaError(ValueError):
     pass
 

@@ -5,13 +5,12 @@ import os
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from . import adapter
-from .schema import SLOT_SECONDS, ScenarioResult, expected_slots
+from . import adapter, physics
+from .schema import SLOT_SECONDS, ScenarioResult, expected_slots, num
 
 SCENARIO = "EMHASS_PPC_PERFECT_PV_LOAD"
 PRICES_PUBLISHED_HOUR = 14   # după ora 14:00 locală, producția cunoaște prețurile zilei următoare
-BATT_KWH = 10.24
-SOC_MIN, SOC_MAX = 0.10, 1.0
+SOC_MIN, SOC_MAX = physics.MEASURED.soc_min, physics.MEASURED.soc_max
 MIN_HORIZON = 8              # ca în producție (sub 8 sloturi nu se optimizează)
 
 
@@ -67,20 +66,29 @@ class Chain:
         return [out[k] for k in sorted(out)]
 
 
-def realize(first, slot0):
-    """Primul pas al planului EMHASS -> energii realizate pe slot (PV/load reale = planul se realizează)."""
-    p_grid = float(first["P_grid"])               # W; negativ = export
-    imp = max(p_grid, 0.0) * 0.25 / 1000
-    exp = max(-p_grid, 0.0) * 0.25 / 1000
+def realize(first, slot0, soc0, phys=physics.MEASURED):
+    """Primul pas al planului EMHASS -> energii realizate pe slot cu FIZICA MĂSURATĂ (physics.py), nu cu credința planificatorului.
+    Din plan se păstrează fluxurile bateriei pe bus-ul DC și curtailment-ul; PV și consumul sunt cele reale;
+    rețeaua și SOC-ul rezultă din eficiențele măsurate. Planul inițial rămâne în rând (plan_*), pentru diagnostic."""
     p_imp, p_exp = float(slot0["ppc_import_price_ron_kwh"]), float(slot0["ppc_export_price_ron_kwh"])
-    batt_w = float(first["P_batt"])               # W; pozitiv = descărcare
+    plan_grid = float(first["P_grid"])             # W; negativ = export
+    batt_w = float(first["P_batt"])                # W; pozitiv = descărcare (pe bus DC)
+    pv = num(slot0.get("pv_actual_kwh")) or 0.0
+    load = num(slot0.get("load_kwh")) or 0.0
+    curtailed = min(float(first.get("P_PV_curtailment", 0.0)) * 0.25 / 1000, pv)
+    c_plan, d_plan = max(-batt_w, 0.0) * 0.25 / 1000, max(batt_w, 0.0) * 0.25 / 1000
+    imp, exp, soc_end, c, d = physics.realize_flows(phys, soc0, pv - curtailed, load, c_plan, d_plan)
     return {
         "import_kwh": round(imp, 6) + 0.0, "export_kwh": round(exp, 6) + 0.0,
-        "batt_charge_kwh": round(max(-batt_w, 0.0) * 0.25 / 1000, 6) + 0.0,
-        "batt_discharge_kwh": round(max(batt_w, 0.0) * 0.25 / 1000, 6) + 0.0,
-        "pv_curtailed_kwh": round(float(first.get("P_PV_curtailment", 0.0)) * 0.25 / 1000, 6),
-        "net_cost_ron": round(imp * p_imp - exp * p_exp, 6),
-        "soc_end": float(first["SOC_opt"]),
+        "batt_charge_kwh": round(c, 6) + 0.0, "batt_discharge_kwh": round(d, 6) + 0.0,
+        "pv_curtailed_kwh": round(curtailed, 6),
+        "net_cost_ron": round(imp * p_imp - exp * p_exp, 6) + 0.0,
+        "soc_end": soc_end,
+        "physics": phys.label,
+        "plan_import_kwh": round(max(plan_grid, 0.0) * 0.25 / 1000, 6) + 0.0,
+        "plan_export_kwh": round(max(-plan_grid, 0.0) * 0.25 / 1000, 6) + 0.0,
+        "plan_soc_end": float(first["SOC_opt"]),
+        "battery_limited": bool(c < c_plan - 1e-9 or d < d_plan - 1e-9),
     }
 
 
@@ -107,7 +115,7 @@ async def advance(chain, archive, tz, solve_first_row, emhass_version, max_slots
             soc = min(max(chain.state["soc"], SOC_MIN), SOC_MAX)
             runtime, latch = adapter.build_runtime(slots, soc, chain.state["curtail"], perfect=True)
             first = await solve_first_row(runtime)
-            row = realize(first, slots[0])
+            row = realize(first, slots[0], soc)
             row.update(
                 slot_start_epoch=s, skipped=False, emhass_version=emhass_version, era=f"emhass-{emhass_version}",
                 horizon=len(slots), horizon_truncated=truncated, scored=not slots[0]["price_filled"],

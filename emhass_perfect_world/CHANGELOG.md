@@ -1,3 +1,11 @@
+## 0.7.0
+- `physics.py`: UN singur set de fizică măsurată (26.10–05.11, 927 sloturi): baterie 0.975 pe sens (dus-întors ≈0.95), DC→AC 0.99, AC→DC 0.95 (presupus, nemăsurabil). Folosit de Perfect World, replay-ul STOCK și inventarul SOC. Planificatorul EMHASS păstrează configul de producție; pierderea fixă rămâne strat separat.
+- Perfect World: `realize` refăcut. Din plan se păstrează fluxurile bateriei (bus DC) și curtailment-ul; rețeaua și SOC-ul rezultă din fizica măsurată, cu limite reale de SOC. Rândul păstrează `plan_import_kwh`, `plan_export_kwh`, `plan_soc_end`, `physics`, `battery_limited`. Lanțul propagă SOC-ul realizat.
+- STOCK_PPC / STOCK_HYDRO_V2: replay STOCK portat în laborator (verificat pe 966 sloturi din arhivă: cu eficiențele vechi 0.99/0.99/0.97 reproduce valorile auditorului cu 0 diferențe), rulat cu fizica măsurată. Valorile `stock_*` din arhivă nu mai intră în scoreboard (au eficiențele vechi); senzorii STOCK din HA rămân neschimbați.
+- Inventar SOC: eta = eta_dis × eta_dc_ac din fizica comună, cu corecția diferenței de SOC de la începutul perioadei (un replay resetat nu pornește mereu din SOC-ul real).
+- Fix: valorile foarte mici sunt serializate de HA ca șir (`"1e-05"`); `schema.num` le acceptă (înainte truncheau orizontul Perfect World și goleau replay-ul STOCK).
+- Scoreboard expune `physics`, `eta_batt_ch`, `eta_batt_dis`, `eta_dc_ac`, `eta_ac_dc`.
+
 ## 0.6.2
 - Sloturile cu salt de contor în arhivă (export imposibil fizic: peste ce pot produce descărcarea + PV − încărcare − consum + import) sunt excluse din scoreboard pentru TOATE lumile (aceeași perioadă). Senzorul expune `excluded_counter_anomaly_slots` și `excluded_counter_anomaly_epochs`.
 

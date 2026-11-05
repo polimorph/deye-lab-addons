@@ -5,8 +5,10 @@ sloturile deja evaluate în Perfect World: comparație pe aceeași perioadă."""
 import json
 import os
 
-BATT_KWH = 10.24
-ETA = 0.99 * 0.97
+from . import physics
+from .schema import num
+
+PHYS = physics.MEASURED   # aceeași fizică în Perfect World, replay STOCK și inventar
 HYDRO_V2_IMPORT, HYDRO_V2_EXPORT = 1.23597, 0.515
 DEFAULT_LOSS = 0.0295
 ENTITY = "sensor.emhass_perfect_world_scoreboard"
@@ -19,7 +21,8 @@ EXPORT_TOL_KWH = 0.4
 
 
 def _num(v, default=0.0):
-    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else default
+    f = num(v)
+    return default if f is None else f
 
 
 def counter_anomaly(a):
@@ -33,25 +36,34 @@ def counter_anomaly(a):
     return exp > bound + EXPORT_TOL_KWH
 
 
-def _inv(soc_real, soc_world, px):
-    if soc_real is None or soc_world is None:
+def _inv(real_end, world_end, real_start, world_start, px, phys=PHYS):
+    """Valoarea energiei rămase în baterie față de lumea reală, corectată cu diferența de la începutul perioadei
+    (toate lumile pornesc din același SOC doar dacă nu s-a resetat replay-ul; altfel diferența inițială nu e câștig)."""
+    if None in (real_end, world_end):
         return 0.0
-    return (soc_real - soc_world) / 100 * BATT_KWH * ETA * px
+    d = real_end - world_end
+    if real_start is not None and world_start is not None:
+        d -= real_start - world_start
+    return d / 100 * phys.capacity_kwh * phys.eta_discharge_to_ac * px
 
 
 def _pct(v):
-    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+    return num(v)
 
 
-def summarize(chain_rows, archive_by_epoch, loss_kwh, emhass_version):
-    """chain_rows: rânduri Perfect World (non-skipped, scored). Returnează dict cu valori pe lume."""
+def summarize(chain_rows, archive_by_epoch, loss_kwh, emhass_version, stock=None, phys=PHYS):
+    """chain_rows: rânduri Perfect World (non-skipped, scored). Returnează dict cu valori pe lume.
+    STOCK_* = replay-ul STOCK din laborator (physics.stock_replay) cu fizica `phys`, nu valorile `stock_*` din arhivă
+    (acelea folosesc eficiențele vechi ale auditorului)."""
+    if stock is None:
+        stock = physics.stock_replay(list(archive_by_epoch.values()), phys)
     rows = sorted((r for r in chain_rows if not r.get("skipped") and r.get("scored")),
                   key=lambda r: r["slot_start_epoch"])
     if not rows:
         return None
     w = {k: {"cost": 0.0, "loss": 0.0, "imp": 0.0, "exp": 0.0}
          for k in ("PERFECT", "REAL", "STOCK_PPC", "STOCK_HYDRO_V2")}
-    last = None
+    last = first = None
     n = 0
     excluded = []
     for r in rows:
@@ -62,10 +74,12 @@ def summarize(chain_rows, archive_by_epoch, loss_kwh, emhass_version):
             excluded.append(r["slot_start_epoch"])
             continue
         pi, pe = _num(a.get("ppc_import_price_ron_kwh")), _num(a.get("ppc_export_price_ron_kwh"))
-        if pi <= 0:
+        st = stock.get(r["slot_start_epoch"])
+        if pi <= 0 or st is None:
             continue
         n += 1
-        last = (r, a, pe)
+        last = (r, a, pe, st)
+        first = first or (r, a, st)
         w["PERFECT"]["cost"] += r["net_cost_ron"]
         w["PERFECT"]["loss"] += loss_kwh * (pi if r["import_kwh"] > 0 else pe)
         w["PERFECT"]["imp"] += r["import_kwh"]
@@ -73,23 +87,27 @@ def summarize(chain_rows, archive_by_epoch, loss_kwh, emhass_version):
         w["REAL"]["cost"] += _num(a.get("actual_ppc_net_cost_ron"))
         w["REAL"]["imp"] += _num(a.get("actual_grid_import_kwh"))
         w["REAL"]["exp"] += _num(a.get("actual_grid_export_kwh"))
-        simp = _num(a.get("stock_grid_import_kwh")) > 0
-        w["STOCK_PPC"]["cost"] += _num(a.get("stock_ppc_net_cost_ron"))
+        simp = st["import"] > 0
+        w["STOCK_PPC"]["cost"] += st["import"] * pi - st["export"] * pe
         w["STOCK_PPC"]["loss"] += loss_kwh * (pi if simp else pe)
-        w["STOCK_PPC"]["imp"] += _num(a.get("stock_grid_import_kwh"))
-        w["STOCK_PPC"]["exp"] += _num(a.get("stock_grid_export_kwh"))
-        w["STOCK_HYDRO_V2"]["cost"] += _num(a.get("stock_hydro_v2_net_cost_ron"))
+        w["STOCK_PPC"]["imp"] += st["import"]
+        w["STOCK_PPC"]["exp"] += st["export"]
+        w["STOCK_HYDRO_V2"]["cost"] += st["import"] * HYDRO_V2_IMPORT - st["export"] * HYDRO_V2_EXPORT
+        w["STOCK_HYDRO_V2"]["imp"] += st["import"]
+        w["STOCK_HYDRO_V2"]["exp"] += st["export"]
         w["STOCK_HYDRO_V2"]["loss"] += loss_kwh * (HYDRO_V2_IMPORT if simp else HYDRO_V2_EXPORT)
     if last is None:
         return None
-    r, a, pe = last
-    soc_real = _pct(a.get("actual_soc_end_pct"))
-    soc_stock = _pct(a.get("stock_soc_end_pct"))
-    soc = {"PERFECT": r["soc_end"] * 100, "REAL": soc_real, "STOCK_PPC": soc_stock, "STOCK_HYDRO_V2": soc_stock}
+    r, a, pe, st = last
+    r0, a0, st0 = first
+    soc_real, soc_real0 = _pct(a.get("actual_soc_end_pct")), _pct(a0.get("actual_soc_start_pct"))
+    soc = {"PERFECT": r["soc_end"] * 100, "REAL": soc_real, "STOCK_PPC": st["soc_end"], "STOCK_HYDRO_V2": st["soc_end"]}
+    soc0 = {"PERFECT": r0["soc_start"] * 100 if "soc_start" in r0 else None, "REAL": soc_real0,
+            "STOCK_PPC": st0["soc_start"], "STOCK_HYDRO_V2": st0["soc_start"]}
     px = {"PERFECT": pe, "REAL": pe, "STOCK_PPC": pe, "STOCK_HYDRO_V2": HYDRO_V2_EXPORT}
     out = {}
     for k, v in w.items():
-        inv = 0.0 if k == "REAL" else _inv(soc_real, soc[k], px[k])
+        inv = 0.0 if k == "REAL" else _inv(soc_real, soc[k], soc_real0, soc0[k], px[k], phys)
         out[k] = {
             "cost_ron": round(v["cost"], 3), "fixed_loss_ron": round(v["loss"], 3),
             "inventory_ron": round(inv, 3), "value_ron": round(-(v["cost"] + v["loss"]) - inv, 3),
@@ -100,7 +118,8 @@ def summarize(chain_rows, archive_by_epoch, loss_kwh, emhass_version):
         "emhass_version": emhass_version, "era": f"emhass-{emhass_version}",
         "slots_counted": n, "excluded_counter_anomaly_slots": len(excluded),
         "excluded_counter_anomaly_epochs": excluded, "through_slot_epoch": r["slot_start_epoch"],
-        "from_slot_epoch": rows[0]["slot_start_epoch"], "loss_kwh_per_slot": loss_kwh,
+        "from_slot_epoch": rows[0]["slot_start_epoch"], "loss_kwh_per_slot": loss_kwh, "physics": phys.label,
+        "eta_batt_ch": phys.eta_ch, "eta_batt_dis": phys.eta_dis, "eta_dc_ac": phys.eta_dc_ac, "eta_ac_dc": phys.eta_ac_dc,
         "worlds": out,
         "value_ron": out["PERFECT"]["value_ron"],
         "delta_vs_real_ron": round(out["PERFECT"]["value_ron"] - out["REAL"]["value_ron"], 3),

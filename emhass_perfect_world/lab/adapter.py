@@ -8,6 +8,8 @@ import os
 import pathlib
 import urllib.request
 
+from .schema import num
+
 PROD_API = "http://5b918bf2-emhass:5000"
 KWH_TO_W = 4000.0          # kWh pe slot de 15 min -> W mediu
 CURTAIL_ENTER, CURTAIL_EXIT, CURTAIL_TIEBREAK = 0.025, 0.035, -0.001   # ca în MPC v4.5 de producție
@@ -50,9 +52,10 @@ async def make_context(data_dir, logger):
 
 
 def _num(v):
-    return isinstance(v, (int, float)) and not isinstance(v, bool)
+    return num(v) is not None
 
 
+NUM_KEYS = ("load_kwh", "pv_actual_kwh", "ppc_import_price_ron_kwh", "ppc_export_price_ron_kwh")
 MAX_PRICE_GAP = 4   # cel mult atâtea sloturi consecutive cu preț lipsă sunt completate
 
 
@@ -67,7 +70,7 @@ def slot_inputs(rows, start_epoch, n):
         r = by.get(start_epoch + 900 * k)
         if not r or not all(_num(r.get(x)) for x in ("load_kwh", "pv_actual_kwh")):
             break
-        seq.append(dict(r))
+        seq.append({k: (num(v) if k in NUM_KEYS and num(v) is not None else v) for k, v in r.items()})
     ok = [all(_num(r.get(x)) for x in ("ppc_import_price_ron_kwh", "ppc_export_price_ron_kwh")) for r in seq]
     out = []
     for i, r in enumerate(seq):

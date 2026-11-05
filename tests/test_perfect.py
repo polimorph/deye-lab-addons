@@ -50,7 +50,8 @@ class T(unittest.TestCase):
             self.assertEqual(n, 8)                          # 12:00..13:45 — apoi așteaptă (ora 14:00 cere ziua 6)
             self.assertEqual(solver.calls[0]["prediction_horizon"], 48)
             self.assertEqual(solver.calls[0]["soc_init"], 0.4)
-            self.assertAlmostEqual(solver.calls[1]["soc_init"], 0.42)   # lanțul își propagă SOC-ul
+            # lanțul propagă SOC-ul REALIZAT cu fizica măsurată (0.25 kWh pe bus * 0.975 / 10.24 kWh), nu SOC_opt al planificatorului
+            self.assertAlmostEqual(solver.calls[1]["soc_init"], 0.4 + 0.25 * 0.975 / 10.24, places=4)
             r = chain.read_slots("2026-11-05")[0]
             self.assertEqual((r["era"], r["config_hash"], r["scored"]), ("emhass-0.18.8", "abc", True))
             # restart: starea se reia de pe disc; cu ziua 6 adăugată lanțul înaintează
@@ -60,11 +61,39 @@ class T(unittest.TestCase):
             n2 = asyncio.run(perfect.advance(chain2, ar, TZ, solver, "0.18.8", max_slots=500))
             self.assertEqual(n2, 40 + 56)                   # 5 nov 14:00..23:45 + 6 nov 00:00..13:45; apoi iar așteaptă ziua 7
 
-    def test_realize_and_day_result(self):
-        row = perfect.realize({"P_grid": 2000.0, "P_batt": 0.0, "SOC_opt": 0.5}, {"ppc_import_price_ron_kwh": 2.0, "ppc_export_price_ron_kwh": 1.0})
-        self.assertEqual((row["import_kwh"], row["export_kwh"], row["net_cost_ron"]), (0.5, 0.0, 1.0))
-        row = perfect.realize({"P_grid": -2000.0, "P_batt": 0.0, "SOC_opt": 0.5}, {"ppc_import_price_ron_kwh": 2.0, "ppc_export_price_ron_kwh": 1.0})
-        self.assertEqual(row["net_cost_ron"], -0.5)
+    def test_realize_uses_measured_physics_not_planner_belief(self):
+        slot = {"ppc_import_price_ron_kwh": 2.0, "ppc_export_price_ron_kwh": 1.0, "pv_actual_kwh": 0.2, "load_kwh": 0.1}
+        # plan: încarcă 1 kW pe bus (0.25 kWh/slot), PV 0.2, consum 0.1 -> bus DC: 0.2-0.25 = -0.05 kWh => AC din rețea 0.05/0.95
+        row = perfect.realize({"P_grid": 123.0, "P_batt": -1000.0, "SOC_opt": 0.9}, slot, 0.40)
+        self.assertAlmostEqual(row["import_kwh"], 0.1 + 0.05 / 0.95, places=5)
+        self.assertEqual(row["export_kwh"], 0.0)
+        self.assertAlmostEqual(row["soc_end"], 0.40 + 0.25 * 0.975 / 10.24, places=6)
+        self.assertAlmostEqual(row["net_cost_ron"], row["import_kwh"] * 2.0, places=5)
+        self.assertEqual(row["plan_soc_end"], 0.9)                       # planul rămâne vizibil pentru diagnostic
+        self.assertEqual(row["physics"], "measured-2026-11-05")
+        # export: PV 0.5, consum 0.1, bateria stă -> 0.5 * 0.99 - 0.1 la rețea
+        slot2 = dict(slot, pv_actual_kwh=0.5)
+        row = perfect.realize({"P_grid": -1600.0, "P_batt": 0.0, "SOC_opt": 0.5}, slot2, 0.5)
+        self.assertAlmostEqual(row["export_kwh"], 0.5 * 0.99 - 0.1, places=5)
+        self.assertAlmostEqual(row["net_cost_ron"], -row["export_kwh"] * 1.0, places=5)
+        self.assertEqual(row["soc_end"], 0.5)
+
+    def test_realize_limits_discharge_at_soc_floor(self):
+        slot = {"ppc_import_price_ron_kwh": 2.0, "ppc_export_price_ron_kwh": 1.0, "pv_actual_kwh": 0.0, "load_kwh": 0.5}
+        # planul cere 0.5 kWh descărcare dar SOC = 10.5% -> doar (0.105-0.10)*10.24*0.975 kWh pe bus
+        row = perfect.realize({"P_grid": 0.0, "P_batt": 2000.0, "SOC_opt": 0.1}, slot, 0.105)
+        self.assertTrue(row["battery_limited"])
+        self.assertAlmostEqual(row["soc_end"], 0.10, places=6)
+        self.assertGreater(row["import_kwh"], 0.4)
+
+    def test_day_result(self):
+        with tempfile.TemporaryDirectory() as d:
+            ar = make_archive(d, ["2026-11-05"])
+            chain = perfect.Chain(d); chain.init(epoch("2026-11-05"), 0.40)
+            asyncio.run(perfect.advance(chain, ar, TZ, FakeSolver(), "0.18.8", max_slots=8))
+            res = perfect.day_result(chain, "2026-11-05", TZ, "0.18.8")
+            self.assertEqual(res["slots"], 8)
+            self.assertFalse(res["complete"])
 
     def test_price_filled_slots_not_scored_and_day_aggregate(self):
         with tempfile.TemporaryDirectory() as d:
