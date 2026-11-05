@@ -58,5 +58,27 @@ class T(unittest.TestCase):
         self.assertIn("perfect_value_ron", f)
 
 
+    def test_counter_anomaly_excluded_from_all_worlds(self):
+        # slot 900: export 11.2 kWh cu descărcare 1.2 kWh și PV 0 → salt de contor, exclus din toate lumile
+        rows = [row(0, 0.2, 0.0, 0.3), row(900, 0.0, 0.1, -0.03), row(1800, 0.2, 0.0, 0.3)]
+        bad = arch(900, actual_grid_export_kwh=11.2, actual_battery_discharge_kwh=1.2, pv_actual_kwh=0.0,
+                   load_kwh=0.1, actual_ppc_net_cost_ron=-26.0)
+        by = {0: arch(0), 900: bad, 1800: arch(1800)}
+        s = publish.summarize(rows, by, 0.03, "0.18.8")
+        self.assertEqual(s["slots_counted"], 2)
+        self.assertEqual(s["excluded_counter_anomaly_epochs"], [900])
+        self.assertAlmostEqual(s["worlds"]["PERFECT"]["cost_ron"], 0.6)
+        self.assertAlmostEqual(s["worlds"]["REAL"]["cost_ron"], 0.2)
+        self.assertAlmostEqual(s["worlds"]["STOCK_PPC"]["cost_ron"], 0.4)
+
+    def test_real_battery_export_not_flagged(self):
+        ok = arch(0, actual_grid_export_kwh=1.534, actual_battery_discharge_kwh=2.017, pv_actual_kwh=0.06,
+                  load_kwh=0.059, actual_grid_import_kwh=0.003)
+        self.assertFalse(publish.counter_anomaly(ok))
+        self.assertTrue(publish.counter_anomaly(arch(0, actual_grid_export_kwh=1.906, actual_battery_discharge_kwh=1.226,
+                                                     pv_actual_kwh=0.0, load_kwh=0.319, actual_grid_import_kwh=0.022)))
+        self.assertFalse(publish.counter_anomaly(arch(0, actual_grid_export_kwh=0.4)))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -11,10 +11,26 @@ HYDRO_V2_IMPORT, HYDRO_V2_EXPORT = 1.23597, 0.515
 DEFAULT_LOSS = 0.0295
 ENTITY = "sensor.emhass_perfect_world_scoreboard"
 LOSS_ENTITY = "sensor.deye_economic_auditor_v0_2_7_fixed_loss_accumulator"
+# Salt de contor în arhivă: exportul măsurat nu poate depăsi ce poate produce fizic invertorul în slot
+# (descărcare + PV − încărcare − consum + import). Calibrat pe 26.10–05.11: cele 6 salturi reale (1.9–11.2 kWh
+# într-un slot) depășesc plafonul cu 0.5–10 kWh, restul sloturilor cu < 0.3 kWh.
+EXPORT_MIN_KWH = 0.5
+EXPORT_TOL_KWH = 0.4
 
 
 def _num(v, default=0.0):
     return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else default
+
+
+def counter_anomaly(a):
+    """True dacă exportul din arhivă e imposibil fizic (salt de contor). Slotul se exclude din TOATE lumile."""
+    exp = _num(a.get("actual_grid_export_kwh"))
+    if exp <= EXPORT_MIN_KWH:
+        return False
+    bound = (_num(a.get("actual_battery_discharge_kwh")) + _num(a.get("pv_actual_kwh"))
+             - _num(a.get("actual_battery_charge_kwh")) - _num(a.get("load_kwh"))
+             + _num(a.get("actual_grid_import_kwh")))
+    return exp > bound + EXPORT_TOL_KWH
 
 
 def _inv(soc_real, soc_world, px):
@@ -37,9 +53,13 @@ def summarize(chain_rows, archive_by_epoch, loss_kwh, emhass_version):
          for k in ("PERFECT", "REAL", "STOCK_PPC", "STOCK_HYDRO_V2")}
     last = None
     n = 0
+    excluded = []
     for r in rows:
         a = archive_by_epoch.get(r["slot_start_epoch"])
         if a is None:
+            continue
+        if counter_anomaly(a):
+            excluded.append(r["slot_start_epoch"])
             continue
         pi, pe = _num(a.get("ppc_import_price_ron_kwh")), _num(a.get("ppc_export_price_ron_kwh"))
         if pi <= 0:
@@ -78,7 +98,8 @@ def summarize(chain_rows, archive_by_epoch, loss_kwh, emhass_version):
         }
     return {
         "emhass_version": emhass_version, "era": f"emhass-{emhass_version}",
-        "slots_counted": n, "through_slot_epoch": r["slot_start_epoch"],
+        "slots_counted": n, "excluded_counter_anomaly_slots": len(excluded),
+        "excluded_counter_anomaly_epochs": excluded, "through_slot_epoch": r["slot_start_epoch"],
         "from_slot_epoch": rows[0]["slot_start_epoch"], "loss_kwh_per_slot": loss_kwh,
         "worlds": out,
         "value_ron": out["PERFECT"]["value_ron"],

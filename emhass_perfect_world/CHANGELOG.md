@@ -1,3 +1,6 @@
+## 0.6.2
+- Sloturile cu salt de contor în arhivă (export imposibil fizic: peste ce pot produce descărcarea + PV − încărcare − consum + import) sunt excluse din scoreboard pentru TOATE lumile (aceeași perioadă). Senzorul expune `excluded_counter_anomaly_slots` și `excluded_counter_anomaly_epochs`.
+
 ## 0.6.1
 - Senzorul scoreboard există și fără rezultate (stare unknown, status WAITING_FULL_HORIZON).
 
