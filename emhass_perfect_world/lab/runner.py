@@ -8,7 +8,7 @@ from importlib.metadata import version
 
 from .archive import SlotArchive
 from .ha import HA
-from . import probe
+from . import probe, solve_probe
 from .schema import SchemaError, normalize_slot
 
 OPTS_PATH = os.environ.get("LAB_OPTIONS", "/data/options.json")
@@ -101,6 +101,9 @@ def main():
     except Exception as exc:  # noqa: BLE001 — nu oprim add-on-ul pentru un backfill eșuat
         last_err = f"backfill: {exc}"
         log.warning("%s", last_err)
+    if solve_probe.needs_run(root):
+        rep = solve_probe.run(root, tz)
+        log.info("solve_probe: ok=%s %s", rep.get("ok"), rep.get("error", ""))
     while True:
         try:
             st = ha.state(opts["capture_entity"])

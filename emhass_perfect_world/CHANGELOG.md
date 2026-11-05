@@ -1,3 +1,7 @@
+## 0.4.0
+- `adapter.py`: context EMHASS din configul LIVE de producție, payload ca MPC v4.5 (fără scalare PV/taxă risc în Perfect World), solve naive-mpc-optim.
+- `solve_probe.py`: un solve pe o zi reală din arhivă → `solve_probe.json`.
+
 ## 0.3.1
 - Probe rev 2: config producție prin GET /get-config (nu din fișier), rute web_server, construcția emhass_conf.
 - Fix: versiunea țintă fără prefixul `v` (nu mai reinstalează EMHASS la fiecare pornire).

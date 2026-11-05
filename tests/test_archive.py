@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "emhass_perfect_world"))
 from lab import runner  # noqa: E402
 from lab.archive import SlotArchive  # noqa: E402
+from lab import adapter  # noqa: E402
 from lab.ha import HA  # noqa: E402
 from lab.schema import ScenarioResult, SchemaError, expected_slots, normalize_slot  # noqa: E402
 
@@ -108,6 +109,32 @@ class T(unittest.TestCase):
             ar = SlotArchive(d); ar.add(normalize_slot("VALID", attrs(0), TZ))
             with open(os.path.join(d, "slots", "2026-11-05.jsonl"), "a") as fh: fh.write('{"slot_st')
             self.assertEqual(len(SlotArchive(d).read_day("2026-11-05")), 1)
+
+    def _row(self, i, exp=1.5, imp=1.9):
+        return attrs(i, ppc_import_price_ron_kwh=imp, ppc_export_price_ron_kwh=exp, load_kwh=0.1, pv_actual_kwh=0.25)
+
+    def test_slot_inputs_stops_at_gap(self):
+        rows = [self._row(0), self._row(1), self._row(3)]  # lipsește slotul 2
+        self.assertEqual(len(adapter.slot_inputs(rows, BASE, 10)), 2)
+        rows[1]["ppc_export_price_ron_kwh"] = "unknown"      # preț invalid oprește secvența
+        self.assertEqual(len(adapter.slot_inputs(rows, BASE, 10)), 1)
+
+    def test_build_runtime_matches_production_shape(self):
+        slots = [self._row(i) for i in range(4)]
+        rt, _ = adapter.build_runtime(slots, 0.44)
+        self.assertEqual(rt["pv_power_forecast"], [1000.0] * 4)      # 0.25 kWh/15min = 1 kW
+        self.assertEqual(rt["load_power_forecast"], [400.0] * 4)
+        self.assertEqual(rt["prediction_horizon"], 4)
+        self.assertEqual((rt["soc_final"], rt["lp_solver_mip_rel_gap"], rt["alpha"], rt["beta"]), (0.3, 0, 1, 0))
+        self.assertEqual(rt["prod_price_forecast"], [1.5] * 4)       # fără taxă de risc în Perfect World
+
+    def test_curtailment_hysteresis_and_haircut(self):
+        exps = [0.02, 0.03, 0.04, 0.2]   # intră la <=0.025, rămâne între praguri, iese la >=0.035
+        rt, first = adapter.build_runtime([self._row(i, exp=e) for i, e in enumerate(exps)], 0.5)
+        self.assertEqual(rt["prod_price_forecast"], [-0.001, -0.001, 0.04, 0.2])
+        self.assertTrue(first)
+        rt, _ = adapter.build_runtime([self._row(0, exp=1.5)], 0.5, perfect=False, haircut=0.1)
+        self.assertEqual(rt["prod_price_forecast"], [1.4])           # replay incumbent păstrează taxa de risc
 
     def test_result_schema(self):
         r = ScenarioResult("2026-11-05", "EMHASS_PPC_PERFECT_PV_LOAD", "0.18.8", 96, 1.5, 3.0, 2.0, 40, 45, "t")
