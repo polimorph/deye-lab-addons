@@ -92,7 +92,8 @@ def realize(first, slot0, soc0, phys=physics.MEASURED):
     }
 
 
-async def advance(chain, archive, tz, solve_first_row, emhass_version, max_slots=60, log=None, row_extra=None):
+async def advance(chain, archive, tz, solve_first_row, emhass_version, max_slots=60, log=None, row_extra=None,
+                  soc_final=adapter.SOC_FINAL):
     """Rezolvă sloturile al căror orizont e acoperit de arhivă, în ordine. Returnează numărul de sloturi procesate."""
     rows = []
     for d in archive.days():
@@ -113,7 +114,7 @@ async def advance(chain, archive, tz, solve_first_row, emhass_version, max_slots
             row = {"slot_start_epoch": s, "skipped": True, "reason": "ARCHIVE_GAP", "emhass_version": emhass_version}
         else:
             soc = min(max(chain.state["soc"], SOC_MIN), SOC_MAX)
-            runtime, latch = adapter.build_runtime(slots, soc, chain.state["curtail"], perfect=True)
+            runtime, latch = adapter.build_runtime(slots, soc, chain.state["curtail"], perfect=True, soc_final=soc_final)
             first = await solve_first_row(runtime)
             row = realize(first, slots[0], soc)
             row.update(

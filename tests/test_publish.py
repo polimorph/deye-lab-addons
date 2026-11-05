@@ -99,6 +99,35 @@ class T(unittest.TestCase):
                                                      pv_actual_kwh=0.0, load_kwh=0.319, actual_grid_import_kwh=0.022)))
         self.assertFalse(publish.counter_anomaly(arch(0, actual_grid_export_kwh=0.4)))
 
+    def test_experiments_same_period_and_deltas(self):
+        main = [row(0, 0.2, 0.0, 0.3, soc_end=0.5), row(900, 0.0, 0.1, -0.03, soc_end=0.4)]
+        # varianta: rulează doar primul slot -> perioada comună = un slot; baza se restrânge la el
+        var = [row(0, 0.1, 0.0, 0.15, soc_end=0.6)]
+        meta = {"id": "v1", "label": "x", "soc_final": 0.2, "reward": 0.5}
+        by = {0: arch(0), 900: arch(900)}
+        stock = {0: st(), 900: st()}
+        orig = publish.physics.stock_replay
+        publish.physics.stock_replay = lambda rows, phys=None: stock
+        try:
+            e = publish.summarize_experiments(main, [(meta, var)], by, 0.03, "x")
+        finally:
+            publish.physics.stock_replay = orig
+        self.assertEqual(e["slots_counted"], 1)
+        v = e["variants"]["v1"]
+        self.assertAlmostEqual(v["cost_ron"], 0.15)
+        self.assertAlmostEqual(e["baseline"]["cost_ron"], 0.3)
+        self.assertGreater(v["delta_vs_baseline_ron"], 0)                    # mai ieftin și cu mai multă energie rămasă
+        self.assertEqual((v["soc_final"], v["reward_factor"]), (0.2, 0.5))
+        # energia rămasă valorează mai mult la preț de import decât la preț de export
+        self.assertGreater(v["delta_vs_baseline_inv_at_import_ron"], v["delta_vs_baseline_ron"])
+        f = publish.flatten_experiments(e)
+        self.assertIn("v1_delta_vs_baseline_ron", f)
+        self.assertEqual(f["variant_ids"], ["v1"])
+
+    def test_experiments_none_without_common_slots(self):
+        meta = {"id": "v1", "label": "x", "soc_final": 0.2, "reward": 0.5}
+        self.assertIsNone(publish.summarize_experiments([row(0, 0, 0, 0)], [(meta, [])], {0: arch(0)}, 0.03, "x"))
+
 
 if __name__ == "__main__":
     unittest.main()

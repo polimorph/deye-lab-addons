@@ -99,16 +99,21 @@ def summarize(chain_rows, archive_by_epoch, loss_kwh, emhass_version, stock=None
     if last is None:
         return None
     r, a, pe, st = last
+    pi_last = _num(a.get("ppc_import_price_ron_kwh"))
     r0, a0, st0 = first
     soc_real, soc_real0 = _pct(a.get("actual_soc_end_pct")), _pct(a0.get("actual_soc_start_pct"))
     soc = {"PERFECT": r["soc_end"] * 100, "REAL": soc_real, "STOCK_PPC": st["soc_end"], "STOCK_HYDRO_V2": st["soc_end"]}
     soc0 = {"PERFECT": r0["soc_start"] * 100 if "soc_start" in r0 else None, "REAL": soc_real0,
             "STOCK_PPC": st0["soc_start"], "STOCK_HYDRO_V2": st0["soc_start"]}
     px = {"PERFECT": pe, "REAL": pe, "STOCK_PPC": pe, "STOCK_HYDRO_V2": HYDRO_V2_EXPORT}
+    px_imp = {"PERFECT": pi_last, "REAL": pi_last, "STOCK_PPC": pi_last, "STOCK_HYDRO_V2": HYDRO_V2_IMPORT}
     out = {}
     for k, v in w.items():
         inv = 0.0 if k == "REAL" else _inv(soc_real, soc[k], soc_real0, soc0[k], px[k], phys)
+        # limită superioară: energia rămasă în baterie evaluată la prețul de import (evită importul de mâine)
+        inv_i = 0.0 if k == "REAL" else _inv(soc_real, soc[k], soc_real0, soc0[k], px_imp[k], phys)
         out[k] = {
+            "value_inv_at_import_ron": round(-(v["cost"] + v["loss"]) - inv_i, 3),
             "cost_ron": round(v["cost"], 3), "fixed_loss_ron": round(v["loss"], 3),
             "inventory_ron": round(inv, 3), "value_ron": round(-(v["cost"] + v["loss"]) - inv, 3),
             "import_kwh": round(v["imp"], 3), "export_kwh": round(v["exp"], 3),
@@ -139,4 +144,58 @@ def flatten(s):
 
 def write(chain_dir, s):
     with open(os.path.join(chain_dir, "scoreboard.json"), "w", encoding="utf-8") as fh:
+        json.dump(s, fh, indent=1, sort_keys=True)
+
+
+def summarize_experiments(main_rows, variants, archive_by_epoch, loss_kwh, emhass_version):
+    """Variante experimentale (soc_final / recompensă) față de Perfect World principal, pe ACELEAȘI sloturi.
+    variants: listă de (meta_dict, rânduri_lanț). Nu intră în scoreboard-ul principal."""
+    def ok(rows):
+        return {r["slot_start_epoch"] for r in rows if not r.get("skipped") and r.get("scored")}
+    common = ok(main_rows)
+    for _, rows in variants:
+        common &= ok(rows)
+    if not common:
+        return None
+    pick = lambda rows: [r for r in rows if r["slot_start_epoch"] in common]
+    base = summarize(pick(main_rows), archive_by_epoch, loss_kwh, emhass_version)
+    if base is None:
+        return None
+    bw = base["worlds"]["PERFECT"]
+    out = {}
+    for meta, rows in variants:
+        s = summarize(pick(rows), archive_by_epoch, loss_kwh, emhass_version)
+        if s is None or s["slots_counted"] != base["slots_counted"]:
+            continue
+        w = s["worlds"]["PERFECT"]
+        out[meta["id"]] = dict(
+            w, label=meta["label"], soc_final=meta["soc_final"], reward_factor=meta["reward"],
+            delta_vs_baseline_ron=round(w["value_ron"] - bw["value_ron"], 3),
+            delta_vs_baseline_inv_at_import_ron=round(w["value_inv_at_import_ron"] - bw["value_inv_at_import_ron"], 3),
+        )
+    return {
+        "emhass_version": emhass_version, "slots_counted": base["slots_counted"],
+        "from_slot_epoch": base["from_slot_epoch"], "through_slot_epoch": base["through_slot_epoch"],
+        "physics": base["physics"], "loss_kwh_per_slot": loss_kwh,
+        "baseline": bw, "real": base["worlds"]["REAL"], "stock_ppc": base["worlds"]["STOCK_PPC"],
+        "variants": out,
+        "method": "EXPERIMENTAL_SOC_FINAL_VARIANTS_SAME_PERIOD",
+    }
+
+
+def flatten_experiments(s):
+    a = {k: v for k, v in s.items() if k not in ("baseline", "real", "stock_ppc", "variants")}
+    for name in ("baseline", "real", "stock_ppc"):
+        for k, v in s[name].items():
+            a[f"{name}_{k}"] = v
+    for vid, d in s["variants"].items():
+        for k, v in d.items():
+            a[f"{vid}_{k}"] = v
+    a["variant_ids"] = list(s["variants"])
+    return a
+
+
+def write_experiments(root, s):
+    os.makedirs(root, exist_ok=True)
+    with open(os.path.join(root, "summary.json"), "w", encoding="utf-8") as fh:
         json.dump(s, fh, indent=1, sort_keys=True)

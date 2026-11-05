@@ -61,6 +61,27 @@ class T(unittest.TestCase):
             n2 = asyncio.run(perfect.advance(chain2, ar, TZ, solver, "0.18.8", max_slots=500))
             self.assertEqual(n2, 40 + 56)                   # 5 nov 14:00..23:45 + 6 nov 00:00..13:45; apoi iar așteaptă ziua 7
 
+    def test_soc_final_is_passed_to_solver_per_variant(self):
+        with tempfile.TemporaryDirectory() as d:
+            ar = make_archive(d, ["2026-11-05"])
+            chain = perfect.Chain(d); chain.init(epoch("2026-11-05", 12), 0.40)
+            solver = FakeSolver()
+            asyncio.run(perfect.advance(chain, ar, TZ, solver, "0.18.8", max_slots=1, soc_final=0.2))
+            self.assertEqual(solver.calls[0]["soc_final"], 0.2)
+            chain2 = perfect.Chain(os.path.join(d, "x")); chain2.init(epoch("2026-11-05", 12), 0.40)
+            solver2 = FakeSolver()
+            asyncio.run(perfect.advance(chain2, ar, TZ, solver2, "0.18.8", max_slots=1))
+            self.assertEqual(solver2.calls[0]["soc_final"], 0.3)             # implicit: ca în producție
+
+    def test_experiment_variants_definition(self):
+        from lab import experiments
+        ids = [v["id"] for v in experiments.VARIANTS]
+        self.assertEqual(len(ids), len(set(ids)))
+        for v in experiments.VARIANTS:
+            self.assertGreaterEqual(v["soc_final"], 0.2)                    # sub 20% Pilotul nu mai majorează comenzile
+            self.assertLessEqual(v["reward"], 0.7)
+            self.assertEqual(experiments.overrides(v), {"battery_soc_final_reward_factor": v["reward"]})
+
     def test_realize_uses_measured_physics_not_planner_belief(self):
         slot = {"ppc_import_price_ron_kwh": 2.0, "ppc_export_price_ron_kwh": 1.0, "pv_actual_kwh": 0.2, "load_kwh": 0.1}
         # plan: încarcă 1 kW pe bus (0.25 kWh/slot), PV 0.2, consum 0.1 -> bus DC: 0.2-0.25 = -0.05 kWh => AC din rețea 0.05/0.95

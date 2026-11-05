@@ -1,3 +1,9 @@
+## 0.8.0
+- Variante experimentale ale țintei de SOC la sfârșitul orizontului (`experiments.py`): `soc_final` 0,2/recompensă 0, 0,3/0,5 și 0,3/0,7 (`battery_soc_final_reward_factor`), fiecare ca lanț Perfect World separat (aceeași arhivă, aceeași fizică măsurată, același start). Config și `soc_final` suprascrise doar în copia laboratorului; producția și scoreboard-ul principal nu se ating. Referința este Perfect World principal (0,3 / recompensă 0).
+- Senzor nou `sensor.emhass_perfect_world_experiments` (starea = sloturi comparate; atribute `<id>_value_ron`, `<id>_delta_vs_baseline_ron`, import/export, SOC final) și `experiments/summary.json`. Perioadă comună pentru toate lumile.
+- Fiecare lume are acum și `value_inv_at_import_ron`: energia rămasă în baterie evaluată la prețul de import (limită superioară), pe lângă evaluarea la preț de export (conservatoare).
+- O eroare într-o variantă nu oprește celelalte variante, lanțul principal sau arhivarea.
+
 ## 0.7.0
 - `physics.py`: UN singur set de fizică măsurată (26.10–05.11, 927 sloturi): baterie 0.975 pe sens (dus-întors ≈0.95), DC→AC 0.99, AC→DC 0.95 (presupus, nemăsurabil). Folosit de Perfect World, replay-ul STOCK și inventarul SOC. Planificatorul EMHASS păstrează configul de producție; pierderea fixă rămâne strat separat.
 - Perfect World: `realize` refăcut. Din plan se păstrează fluxurile bateriei (bus DC) și curtailment-ul; rețeaua și SOC-ul rezultă din fizica măsurată, cu limite reale de SOC. Rândul păstrează `plan_import_kwh`, `plan_export_kwh`, `plan_soc_end`, `physics`, `battery_limited`. Lanțul propagă SOC-ul realizat.

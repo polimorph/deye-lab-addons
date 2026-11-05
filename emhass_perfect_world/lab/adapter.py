@@ -22,16 +22,19 @@ def fetch_prod_config(timeout=15):
         return json.load(resp)
 
 
-async def make_context(data_dir, logger):
-    """Construiește (emhass_conf, params) din configul live. Doar citire de la producție."""
+async def make_context(data_dir, logger, overrides=None, name="emhass_data"):
+    """Construiește (emhass_conf, params) din configul live. Doar citire de la producție.
+    `overrides`: chei de config suprascrise DOAR în copia laboratorului (variantele experimentale); producția nu se atinge."""
     import emhass
     import emhass.utils as u
 
     root = pathlib.Path(emhass.__file__).parent
-    work = pathlib.Path(data_dir) / "emhass_data"
+    work = pathlib.Path(data_dir) / name
     work.mkdir(parents=True, exist_ok=True)
     cfg_path = work / "config.json"
-    cfg_path.write_text(json.dumps(fetch_prod_config(), indent=1), encoding="utf-8")
+    cfg = fetch_prod_config()
+    cfg.update(overrides or {})
+    cfg_path.write_text(json.dumps(cfg, indent=1), encoding="utf-8")
     emhass_conf = {
         "config_path": cfg_path,
         "options_path": pathlib.Path("/data/options.json"),
@@ -85,7 +88,7 @@ def slot_inputs(rows, start_epoch, n):
     return out
 
 
-def build_runtime(slots, soc_init, curtail_prev=False, perfect=True, haircut=0.0):
+def build_runtime(slots, soc_init, curtail_prev=False, perfect=True, haircut=0.0, soc_final=SOC_FINAL):
     """Payload ca MPC v4.5 de producție, dar cu PV/load REALE (perfect=True).
     Fără scalare PV și fără taxă de risc la export când perfect=True (acoperă eroarea de prognoză, inexistentă aici).
     Returnează (runtime, curtail_state_after_first_slot)."""
@@ -122,7 +125,7 @@ def build_runtime(slots, soc_init, curtail_prev=False, perfect=True, haircut=0.0
         "optimization_time_step": 15,
         "prediction_horizon": len(slots),
         "soc_init": round(float(soc_init), 4),
-        "soc_final": SOC_FINAL,
+        "soc_final": soc_final,
         "lp_solver_mip_rel_gap": 0,
     }
     return runtime, first_state

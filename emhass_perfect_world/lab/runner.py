@@ -9,7 +9,7 @@ from importlib.metadata import version
 
 from .archive import SlotArchive
 from .ha import HA
-from . import adapter, perfect, probe, publish, solve_probe
+from . import adapter, experiments, perfect, probe, publish, solve_probe
 from .schema import SchemaError, normalize_slot
 
 OPTS_PATH = os.environ.get("LAB_OPTIONS", "/data/options.json")
@@ -76,17 +76,25 @@ def write_status(root, **kw):
     os.replace(tmp, os.path.join(root, "status.json"))
 
 
+def chain_start(opts, archive):
+    """(epoch, soc) de pornire a lanțurilor, din slotul de start configurat; None dacă lipsește din arhivă."""
+    start = int(datetime.fromisoformat(opts["chain_start"]).timestamp()) // 900 * 900
+    row = next((r for d in archive.days() for r in archive.read_day(d) if r["slot_start_epoch"] == start), None)
+    soc = row.get("actual_soc_start_pct") if row else None
+    if not isinstance(soc, (int, float)):
+        return None
+    return start, soc / 100
+
+
 def run_chain(opts, archive, chain, tz, emhass_version):
     """Un pas de lanț: înaintează cât permite arhiva (orizont acoperit), apoi rescrie agregatele pe zi."""
     if chain.state is None:
-        start = int(datetime.fromisoformat(opts["chain_start"]).timestamp()) // 900 * 900
-        row = next((r for d in archive.days() for r in archive.read_day(d) if r["slot_start_epoch"] == start), None)
-        soc = row.get("actual_soc_start_pct") if row else None
-        if not isinstance(soc, (int, float)):
+        st = chain_start(opts, archive)
+        if st is None:
             log.warning("chain: lipsește slotul de start %s sau SOC-ul lui; lanțul nu pornește", opts["chain_start"])
             return 0
-        chain.init(start, soc / 100)
-        log.info("chain: pornit la %s cu SOC %.1f%%", opts["chain_start"], soc)
+        chain.init(*st)
+        log.info("chain: pornit la %s cu SOC %.1f%%", opts["chain_start"], st[1] * 100)
 
     async def go():
         clog = logging.getLogger("lab.chain")
@@ -127,6 +135,49 @@ def publish_scoreboard(ha, archive, chain, tz, emhass_version):
     attrs.update(unit_of_measurement="RON", friendly_name="EMHASS MaxControl Perfect World", icon="mdi:crystal-ball")
     ha.post_state(publish.ENTITY, str(s["value_ron"]), attrs)
     return s
+
+
+def run_experiments(opts, archive, tz, emhass_version):
+    """Variantele experimentale, fiecare izolat: o eroare la una nu le oprește pe celelalte și nici lanțul principal."""
+    start = chain_start(opts, archive)
+    total = 0
+    for v in experiments.VARIANTS:
+        try:
+            total += asyncio.run(asyncio.wait_for(
+                experiments.advance_variant(opts["data_dir"], archive, start, tz, emhass_version, v, log=log), 900))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("experiment %s: %r", v["id"], exc)
+    if total:
+        log.info("experimente: %d sloturi procesate", total)
+    return total
+
+
+def publish_experiments(ha, archive, main_chain, tz, emhass_version, opts):
+    by_epoch = {r["slot_start_epoch"]: r for d in archive.days() for r in archive.read_day(d)}
+    main_rows = [r for d in archive.days() for r in main_chain.read_slots(d)]
+    variants = []
+    for v in experiments.VARIANTS:
+        ch = perfect.Chain(experiments.chain_dir(opts["data_dir"], v["id"]))
+        variants.append((v, [r for d in archive.days() for r in ch.read_slots(d)]))
+    try:
+        loss = float(ha.state(publish.LOSS_ENTITY)["attributes"].get("loss_kwh_per_slot", publish.DEFAULT_LOSS))
+    except Exception:  # noqa: BLE001
+        loss = publish.DEFAULT_LOSS
+    s = publish.summarize_experiments(main_rows, variants, by_epoch, loss, emhass_version)
+    base_attrs = {"friendly_name": "EMHASS Perfect World · experimente soc_final", "icon": "mdi:flask-outline"}
+    if s is None:
+        ha.post_state(experiments_entity(), "unknown", dict(base_attrs, status="WAITING_FULL_HORIZON",
+                      emhass_version=emhass_version))
+        return None
+    publish.write_experiments(os.path.join(opts["data_dir"], "experiments"), s)
+    attrs = publish.flatten_experiments(s)
+    attrs.update(base_attrs, unit_of_measurement="sloturi", status="OK")
+    ha.post_state(experiments_entity(), str(s["slots_counted"]), attrs)
+    return s
+
+
+def experiments_entity():
+    return "sensor.emhass_perfect_world_experiments"
 
 
 def chain_selftest(opts, archive, tz, emhass_version):
@@ -225,6 +276,12 @@ def main():
                 publish_scoreboard(ha, archive, chain, tz, emhass_version)
             except Exception as exc:  # noqa: BLE001
                 log.warning("publish: %r", exc)
+            if chain.state is not None:
+                try:
+                    run_experiments(opts, archive, tz, emhass_version)
+                    publish_experiments(ha, archive, chain, tz, emhass_version, opts)
+                except Exception as exc:  # noqa: BLE001 — experimentele nu trebuie să afecteze lanțul principal
+                    log.warning("experimente: %r", exc)
         try:
             st = ha.state(opts["capture_entity"])
             if ingest(archive, st["state"], st.get("attributes", {}), tz):
