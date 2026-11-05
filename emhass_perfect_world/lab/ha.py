@@ -26,7 +26,8 @@ class HA:
 
     def history(self, entity_id, start_iso, end_iso=None):
         """Lista de stări (cu atribute) ale unei entități, în ordine cronologică."""
-        params = {"filter_entity_id": entity_id}
+        # significant_changes_only=0: senzorul rămâne VALID, slotul se schimbă doar în atribute
+        params = {"filter_entity_id": entity_id, "significant_changes_only": "0"}
         if end_iso:
             params["end_time"] = end_iso
         res = self._get("/history/period/" + urllib.parse.quote(start_iso, safe=""), params, timeout=180)

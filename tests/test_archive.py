@@ -30,6 +30,7 @@ class Fake(BaseHTTPRequestHandler):
         elif path.startswith("/states/"):
             body = Fake.cur
         elif path.startswith("/history/period/"):
+            assert "significant_changes_only=0" in path
             body = [Fake.hist]
         else:
             self.send_error(404); return
