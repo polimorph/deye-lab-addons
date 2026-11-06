@@ -129,7 +129,7 @@ class T(unittest.TestCase):
         main = [row(0, 0.0, 0.0, 0.0, scored=False, soc_end=0.5), row(900, 0.0, 0.25, -0.25 * PE, soc_end=0.5)]
         var = [row(0, 0.0, 0.25, -0.25 * PE, scored=False, soc_end=0.5), row(900, 0.0, 0.0, 0.0, soc_end=0.5)]
         meta = {"id": "v1", "label": "x", "soc_final": 0.5, "reward": 0.0}
-        by = {0: arch(0), 900: arch(900)}
+        by = {0: arch(0, ppc_import_price_ron_kwh=0.0, ppc_export_price_ron_kwh=0.0), 900: arch(900)}   # slot 0: fără preț în arhivă
         orig = publish.physics.stock_replay
         publish.physics.stock_replay = lambda rows, phys=None: {0: st(), 900: st()}
         try:

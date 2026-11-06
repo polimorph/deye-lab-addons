@@ -1,3 +1,6 @@
+## 0.9.2
+- Corecție 0.9.1: Δ pe toate sloturile includea doar sloturile cu preț în arhivă, deci tocmai sloturile cu preț completat (11:30 pe 05.11) rămâneau excluse. Acum prețul lipsă se deduce din rândul lanțului (cost / energie).
+
 ## 0.9.1
 - Experimente: Δ față de referință pe TOATE sloturile procesate de ambele lanțuri (`<id>_delta_all_slots_ron`, `<id>_delta_all_slots_inv_at_import_ron`, `<id>_slots_all`), inclusiv sloturile cu preț completat. Motiv: la egalitate de preț între sloturi vecine, solver-ul poate muta un export într-un slot exclus din scorare (11:30 pe 05.11), ceea ce apărea ca pierdere falsă de −0,354 RON la `sf50_r0` și `sf30_r100`. `delta_vs_baseline_*` (pe sloturile scorate, comparabile cu REAL/STOCK) rămân neschimbate.
 

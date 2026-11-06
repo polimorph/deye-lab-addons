@@ -157,12 +157,20 @@ def _delta_all_slots(base_rows, var_rows, archive_by_epoch, loss_kwh, phys=PHYS)
     d_cost = d_loss = 0.0
     n, last = 0, None
     for e in sorted(set(b) & set(v)):
-        a = archive_by_epoch.get(e)
-        if a is None or counter_anomaly(a):
+        a = archive_by_epoch.get(e) or {}
+        if counter_anomaly(a):
             continue
         pi, pe = _num(a.get("ppc_import_price_ron_kwh")), _num(a.get("ppc_export_price_ron_kwh"))
-        if pi <= 0:
+        # slotul cu preț completat poate să nu aibă prețul în arhivă: folosim prețul implicit din rândul lanțului
+        for r in (b[e], v[e]):
+            if pi <= 0 and r["import_kwh"] > 1e-9:
+                pi = r["net_cost_ron"] / r["import_kwh"]
+            if pe <= 0 and r["export_kwh"] > 1e-9:
+                pe = -r["net_cost_ron"] / r["export_kwh"]
+        if pi <= 0 and pe <= 0:
             continue
+        pi = pi if pi > 0 else pe
+        pe = pe if pe > 0 else pi
         n += 1
         last = (b[e], v[e], pi, pe)
         d_cost += v[e]["net_cost_ron"] - b[e]["net_cost_ron"]
