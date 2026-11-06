@@ -1,3 +1,6 @@
+## 0.9.1
+- Experimente: Δ față de referință pe TOATE sloturile procesate de ambele lanțuri (`<id>_delta_all_slots_ron`, `<id>_delta_all_slots_inv_at_import_ron`, `<id>_slots_all`), inclusiv sloturile cu preț completat. Motiv: la egalitate de preț între sloturi vecine, solver-ul poate muta un export într-un slot exclus din scorare (11:30 pe 05.11), ceea ce apărea ca pierdere falsă de −0,354 RON la `sf50_r0` și `sf30_r100`. `delta_vs_baseline_*` (pe sloturile scorate, comparabile cu REAL/STOCK) rămân neschimbate.
+
 ## 0.9.0
 - Diagnostic nou pe fiecare rând de slot: `plan_soc_horizon_end` (SOC-ul planului la ultimul pas al orizontului) și `plan_soc_horizon_min` (cel mai jos SOC din plan). Arată direct dacă ținta `soc_final` / recompensa sunt binding. Rândurile vechi nu le au (None).
 - Variante experimentale noi: `sf30_r0` (replică a referinței — verifică reproductibilitatea, Δ trebuie să fie 0), `sf30_r100` (recompensă 1,0, testează explicit riscul de încărcare din rețea pentru recompensă) și `sf50_r0` (țintă 50%). Plafonul de recompensă din teste: 1,0.

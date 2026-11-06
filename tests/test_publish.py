@@ -124,6 +124,41 @@ class T(unittest.TestCase):
         self.assertIn("v1_delta_vs_baseline_ron", f)
         self.assertEqual(f["variant_ids"], ["v1"])
 
+    def test_experiments_export_moved_into_unscored_slot_is_not_a_loss(self):
+        # baza exportă în slotul scorat 900; varianta în slotul 0 (preț completat, nescorat) — același preț, aceeași energie
+        main = [row(0, 0.0, 0.0, 0.0, scored=False, soc_end=0.5), row(900, 0.0, 0.25, -0.25 * PE, soc_end=0.5)]
+        var = [row(0, 0.0, 0.25, -0.25 * PE, scored=False, soc_end=0.5), row(900, 0.0, 0.0, 0.0, soc_end=0.5)]
+        meta = {"id": "v1", "label": "x", "soc_final": 0.5, "reward": 0.0}
+        by = {0: arch(0), 900: arch(900)}
+        orig = publish.physics.stock_replay
+        publish.physics.stock_replay = lambda rows, phys=None: {0: st(), 900: st()}
+        try:
+            e = publish.summarize_experiments(main, [(meta, var)], by, 0.03, "x")
+        finally:
+            publish.physics.stock_replay = orig
+        v = e["variants"]["v1"]
+        self.assertAlmostEqual(v["delta_vs_baseline_ron"], -0.25 * PE, places=3)   # scorarea cu excluderi vede o pierdere
+        self.assertEqual(v["slots_all"], 2)
+        self.assertAlmostEqual(v["delta_all_slots_ron"], 0.0, places=6)            # pe toate sloturile: egal
+        self.assertAlmostEqual(v["delta_all_slots_inv_at_import_ron"], 0.0, places=6)
+        self.assertIn("v1_delta_all_slots_ron", publish.flatten_experiments(e))
+
+    def test_experiments_all_slots_delta_counts_real_gain_and_leftover_energy(self):
+        main = [row(0, 0.2, 0.0, 0.3, soc_end=0.5)]
+        var = [row(0, 0.1, 0.0, 0.15, soc_end=0.6)]                                   # mai ieftin și +10 pp SOC
+        meta = {"id": "v1", "label": "x", "soc_final": 0.2, "reward": 0.5}
+        orig = publish.physics.stock_replay
+        publish.physics.stock_replay = lambda rows, phys=None: {0: st()}
+        try:
+            e = publish.summarize_experiments(main, [(meta, var)], {0: arch(0)}, 0.03, "x")
+        finally:
+            publish.physics.stock_replay = orig
+        v = e["variants"]["v1"]
+        gain = 0.15 + 10 / 100 * 10.24 * ETA * PE
+        self.assertAlmostEqual(v["delta_all_slots_ron"], gain, places=3)
+        self.assertAlmostEqual(v["delta_all_slots_ron"], v["delta_vs_baseline_ron"], places=3)   # fără sloturi excluse coincid
+        self.assertGreater(v["delta_all_slots_inv_at_import_ron"], v["delta_all_slots_ron"])
+
     def test_experiments_none_without_common_slots(self):
         meta = {"id": "v1", "label": "x", "soc_final": 0.2, "reward": 0.5}
         self.assertIsNone(publish.summarize_experiments([row(0, 0, 0, 0)], [(meta, [])], {0: arch(0)}, 0.03, "x"))

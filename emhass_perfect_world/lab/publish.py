@@ -147,6 +147,38 @@ def write(chain_dir, s):
         json.dump(s, fh, indent=1, sort_keys=True)
 
 
+def _delta_all_slots(base_rows, var_rows, archive_by_epoch, loss_kwh, phys=PHYS):
+    """Δ variantă − referință între două lanțuri Perfect World (aceleași prețuri, aceeași fizică), pe TOATE sloturile
+    procesate de ambele, inclusiv cele cu preț completat (scored=false). Motiv: la egalitate de preț între sloturi
+    vecine, solver-ul poate muta un export într-un slot exclus din scorare; comparația cu REAL/STOCK rămâne pe sloturile
+    scorate, dar între variante nu are sens să pierdem acel venit. Valoare pozitivă = varianta câștigă."""
+    ok = lambda rows: {r["slot_start_epoch"]: r for r in rows if not r.get("skipped")}
+    b, v = ok(base_rows), ok(var_rows)
+    d_cost = d_loss = 0.0
+    n, last = 0, None
+    for e in sorted(set(b) & set(v)):
+        a = archive_by_epoch.get(e)
+        if a is None or counter_anomaly(a):
+            continue
+        pi, pe = _num(a.get("ppc_import_price_ron_kwh")), _num(a.get("ppc_export_price_ron_kwh"))
+        if pi <= 0:
+            continue
+        n += 1
+        last = (b[e], v[e], pi, pe)
+        d_cost += v[e]["net_cost_ron"] - b[e]["net_cost_ron"]
+        d_loss += loss_kwh * (pi if v[e]["import_kwh"] > 0 else pe) - loss_kwh * (pi if b[e]["import_kwh"] > 0 else pe)
+    if last is None:
+        return {}
+    rb, rv, pi, pe = last
+    d_soc = (rb["soc_end"] - rv["soc_end"]) * 100            # puncte procentuale: referința are mai mult => varianta pierde
+    inv = lambda px: d_soc / 100 * phys.capacity_kwh * phys.eta_discharge_to_ac * px
+    return {
+        "slots_all": n,
+        "delta_all_slots_ron": round(-(d_cost + d_loss) - inv(pe), 3),
+        "delta_all_slots_inv_at_import_ron": round(-(d_cost + d_loss) - inv(pi), 3),
+    }
+
+
 def summarize_experiments(main_rows, variants, archive_by_epoch, loss_kwh, emhass_version):
     """Variante experimentale (soc_final / recompensă) față de Perfect World principal, pe ACELEAȘI sloturi.
     variants: listă de (meta_dict, rânduri_lanț). Nu intră în scoreboard-ul principal."""
@@ -173,6 +205,9 @@ def summarize_experiments(main_rows, variants, archive_by_epoch, loss_kwh, emhas
             delta_vs_baseline_ron=round(w["value_ron"] - bw["value_ron"], 3),
             delta_vs_baseline_inv_at_import_ron=round(w["value_inv_at_import_ron"] - bw["value_inv_at_import_ron"], 3),
         )
+    for meta, rows in variants:                     # Δ pe TOATE sloturile procesate (vezi _delta_all_slots)
+        if meta["id"] in out:
+            out[meta["id"]].update(_delta_all_slots(main_rows, rows, archive_by_epoch, loss_kwh))
     return {
         "emhass_version": emhass_version, "slots_counted": base["slots_counted"],
         "from_slot_epoch": base["from_slot_epoch"], "through_slot_epoch": base["through_slot_epoch"],
