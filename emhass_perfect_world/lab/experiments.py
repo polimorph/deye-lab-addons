@@ -3,13 +3,18 @@ Fiecare variantă e un lanț Perfect World separat (același arhiv, aceeași fiz
 soc_final proprii DOAR în laborator. Nu intră în scoreboard-ul principal și nu ating producția."""
 import logging
 import os
+import shutil
 
 from . import adapter, perfect
 
+DIAG_VERSION = 2   # 2 = rândurile conțin plan_soc_horizon_end/min; la schimbare lanțurile experimentale se reiau de la start
 VARIANTS = (
+    {"id": "sf30_r0", "label": "soc_final 0,3 · recompensă 0 (replică baseline)", "soc_final": 0.3, "reward": 0.0},
     {"id": "sf20_r0", "label": "soc_final 0,2 · recompensă 0", "soc_final": 0.2, "reward": 0.0},
     {"id": "sf30_r50", "label": "soc_final 0,3 · recompensă 0,5", "soc_final": 0.3, "reward": 0.5},
     {"id": "sf30_r70", "label": "soc_final 0,3 · recompensă 0,7", "soc_final": 0.3, "reward": 0.7},
+    {"id": "sf30_r100", "label": "soc_final 0,3 · recompensă 1,0", "soc_final": 0.3, "reward": 1.0},
+    {"id": "sf50_r0", "label": "soc_final 0,5 · recompensă 0", "soc_final": 0.5, "reward": 0.0},
 )
 REWARD_KEY = "battery_soc_final_reward_factor"
 
@@ -25,10 +30,15 @@ def overrides(v):
 async def advance_variant(root, archive, start, tz, emhass_version, v, log=None, max_slots=60):
     """Un pas pentru o variantă. start = (epoch, soc) al lanțului principal; întoarce numărul de sloturi procesate."""
     chain = perfect.Chain(chain_dir(root, v["id"]))
+    if chain.state is not None and chain.state.get("diag") != DIAG_VERSION:
+        shutil.rmtree(chain.dir, ignore_errors=True)       # rânduri vechi fără diagnostic: reluare curată (doar copia laboratorului)
+        chain = perfect.Chain(chain_dir(root, v["id"]))
     if chain.state is None:
         if start is None:
             return 0
         chain.init(*start)
+        chain.state["diag"] = DIAG_VERSION
+        chain.save()
     clog = logging.getLogger("lab.exp." + v["id"])
     emhass_conf, config, params = await adapter.make_context(
         root, clog, overrides=overrides(v), name="emhass_data_" + v["id"])

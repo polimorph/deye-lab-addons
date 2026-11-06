@@ -79,7 +79,7 @@ class T(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         for v in experiments.VARIANTS:
             self.assertGreaterEqual(v["soc_final"], 0.2)                    # sub 20% Pilotul nu mai majorează comenzile
-            self.assertLessEqual(v["reward"], 0.7)
+            self.assertLessEqual(v["reward"], 1.0)                         # >0,7 testează explicit riscul de arbitraj cu încărcare din rețea
             self.assertEqual(experiments.overrides(v), {"battery_soc_final_reward_factor": v["reward"]})
 
     def test_realize_uses_measured_physics_not_planner_belief(self):
@@ -98,6 +98,34 @@ class T(unittest.TestCase):
         self.assertAlmostEqual(row["export_kwh"], 0.5 * 0.99 - 0.1, places=5)
         self.assertAlmostEqual(row["net_cost_ron"], -row["export_kwh"] * 1.0, places=5)
         self.assertEqual(row["soc_end"], 0.5)
+
+    def test_realize_logs_plan_soc_at_horizon_end(self):
+        slot = {"ppc_import_price_ron_kwh": 2.0, "ppc_export_price_ron_kwh": 1.0, "pv_actual_kwh": 0.2, "load_kwh": 0.1}
+        row = perfect.realize({"P_grid": 0.0, "P_batt": 0.0, "SOC_opt": 0.5, "_soc_h_end": 0.31, "_soc_h_min": 0.2}, slot, 0.5)
+        self.assertEqual(row["plan_soc_horizon_end"], 0.31)
+        self.assertEqual(row["plan_soc_horizon_min"], 0.2)
+        row = perfect.realize({"P_grid": 0.0, "P_batt": 0.0, "SOC_opt": 0.5}, slot, 0.5)       # rând fără diagnostic
+        self.assertIsNone(row["plan_soc_horizon_end"])
+
+    def test_experiment_chain_restarts_when_diag_version_changes(self):
+        import tempfile
+        from lab import experiments
+        with tempfile.TemporaryDirectory() as d:
+            v = experiments.VARIANTS[0]
+            ch = perfect.Chain(experiments.chain_dir(d, v["id"])); ch.init(1000, 0.4)
+            ch.append_slot("2026-11-05", {"slot_start_epoch": 1000})
+            self.assertNotEqual(ch.state.get("diag"), experiments.DIAG_VERSION)   # lanț vechi, fără marcaj
+            class Ar:                                  # arhivă goală: advance_variant se oprește după resetare
+                def days(self): return []
+                def read_day(self, d): return []
+            import unittest.mock as m
+            with m.patch.object(experiments.adapter, "make_context", side_effect=RuntimeError("stop")):
+                with self.assertRaises(RuntimeError):
+                    asyncio.run(experiments.advance_variant(d, Ar(), (2000, 0.5), TZ, "x", v))
+            ch2 = perfect.Chain(experiments.chain_dir(d, v["id"]))
+            self.assertEqual(ch2.state["diag"], experiments.DIAG_VERSION)
+            self.assertEqual(ch2.state["next_epoch"], 2000)                       # reluat de la start-ul principal
+            self.assertEqual(ch2.read_slots("2026-11-05"), [])                    # rândurile vechi șterse
 
     def test_realize_limits_discharge_at_soc_floor(self):
         slot = {"ppc_import_price_ron_kwh": 2.0, "ppc_export_price_ron_kwh": 1.0, "pv_actual_kwh": 0.0, "load_kwh": 0.5}

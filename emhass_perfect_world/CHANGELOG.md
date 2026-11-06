@@ -1,3 +1,8 @@
+## 0.9.0
+- Diagnostic nou pe fiecare rând de slot: `plan_soc_horizon_end` (SOC-ul planului la ultimul pas al orizontului) și `plan_soc_horizon_min` (cel mai jos SOC din plan). Arată direct dacă ținta `soc_final` / recompensa sunt binding. Rândurile vechi nu le au (None).
+- Variante experimentale noi: `sf30_r0` (replică a referinței — verifică reproductibilitatea, Δ trebuie să fie 0), `sf30_r100` (recompensă 1,0, testează explicit riscul de încărcare din rețea pentru recompensă) și `sf50_r0` (țintă 50%). Plafonul de recompensă din teste: 1,0.
+- Lanțurile experimentale se reiau de la start o singură dată (marcaj `diag` = 2), ca să aibă diagnosticul pe toată perioada; lanțul principal și scoreboard-ul nu se ating.
+
 ## 0.8.0
 - Variante experimentale ale țintei de SOC la sfârșitul orizontului (`experiments.py`): `soc_final` 0,2/recompensă 0, 0,3/0,5 și 0,3/0,7 (`battery_soc_final_reward_factor`), fiecare ca lanț Perfect World separat (aceeași arhivă, aceeași fizică măsurată, același start). Config și `soc_final` suprascrise doar în copia laboratorului; producția și scoreboard-ul principal nu se ating. Referința este Perfect World principal (0,3 / recompensă 0).
 - Senzor nou `sensor.emhass_perfect_world_experiments` (starea = sloturi comparate; atribute `<id>_value_ron`, `<id>_delta_vs_baseline_ron`, import/export, SOC final) și `experiments/summary.json`. Perioadă comună pentru toate lumile.

@@ -88,6 +88,8 @@ def realize(first, slot0, soc0, phys=physics.MEASURED):
         "plan_import_kwh": round(max(plan_grid, 0.0) * 0.25 / 1000, 6) + 0.0,
         "plan_export_kwh": round(max(-plan_grid, 0.0) * 0.25 / 1000, 6) + 0.0,
         "plan_soc_end": float(first["SOC_opt"]),
+        "plan_soc_horizon_end": round(float(first["_soc_h_end"]), 6) if "_soc_h_end" in first else None,
+        "plan_soc_horizon_min": round(float(first["_soc_h_min"]), 6) if "_soc_h_min" in first else None,
         "battery_limited": bool(c < c_plan - 1e-9 or d < d_plan - 1e-9),
     }
 

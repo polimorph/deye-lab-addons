@@ -158,5 +158,9 @@ def first_row_solver(emhass_conf, params, logger):
     """Funcție async runtime -> primul rând al planului (dict), pentru lanțul slot cu slot."""
     async def run(runtime):
         df = await solve(emhass_conf, params, runtime, logger)
-        return df.iloc[0].to_dict()
+        row = df.iloc[0].to_dict()
+        if "SOC_opt" in df:                         # diagnostic: unde se termină planul și cât de jos coboară (țintă binding?)
+            row["_soc_h_end"] = float(df["SOC_opt"].iloc[-1])
+            row["_soc_h_min"] = float(df["SOC_opt"].min())
+        return row
     return run
