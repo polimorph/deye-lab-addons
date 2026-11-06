@@ -1,3 +1,6 @@
+## 0.9.3
+- Δ pe toate sloturile: fără „-0,000” în dashboard.
+
 ## 0.9.2
 - Corecție 0.9.1: Δ pe toate sloturile includea doar sloturile cu preț în arhivă, deci tocmai sloturile cu preț completat (11:30 pe 05.11) rămâneau excluse. Acum prețul lipsă se deduce din rândul lanțului (cost / energie).
 

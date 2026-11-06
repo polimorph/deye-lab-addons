@@ -182,8 +182,8 @@ def _delta_all_slots(base_rows, var_rows, archive_by_epoch, loss_kwh, phys=PHYS)
     inv = lambda px: d_soc / 100 * phys.capacity_kwh * phys.eta_discharge_to_ac * px
     return {
         "slots_all": n,
-        "delta_all_slots_ron": round(-(d_cost + d_loss) - inv(pe), 3),
-        "delta_all_slots_inv_at_import_ron": round(-(d_cost + d_loss) - inv(pi), 3),
+        "delta_all_slots_ron": round(-(d_cost + d_loss) - inv(pe), 3) + 0.0,
+        "delta_all_slots_inv_at_import_ron": round(-(d_cost + d_loss) - inv(pi), 3) + 0.0,   # +0.0: fără „-0.000”
     }
 
 
