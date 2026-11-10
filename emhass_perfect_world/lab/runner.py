@@ -234,6 +234,17 @@ def selftest():
     log.info("import emhass.optimization OK")
 
 
+REPUBLISH_MIN_GAP = 60  # secunde între două republicări forțate
+
+
+def published_entities_missing(ha, chain):
+    """Senzorii publicați prin REST dispar la repornirea HA. True dacă vreunul lipsește (404)."""
+    names = [publish.ENTITY]
+    if chain.state is not None:  # senzorul de experimente există doar după primul rezultat al lanțului
+        names.append(experiments_entity())
+    return any(not ha.exists(n) for n in names)
+
+
 def main():
     opts = load_options()
     root = opts["data_dir"]
@@ -265,6 +276,7 @@ def main():
         log.warning("selftest lanț eșuat: %r", exc)
     chain = perfect.Chain(root)
     next_chain = 0.0
+    last_forced = 0.0
     while True:
         if time.time() >= next_chain:
             next_chain = time.time() + int(opts["chain_every_seconds"])
@@ -287,6 +299,12 @@ def main():
             if ingest(archive, st["state"], st.get("attributes", {}), tz):
                 log.info("slot nou arhivat: %s", st["attributes"].get("slot_start_epoch"))
             last_err = None
+            # HA a repornit și a pierdut senzorii publicați prin REST: republică imediat, nu după următorul ciclu de 300 s.
+            if time.time() - last_forced >= REPUBLISH_MIN_GAP and next_chain > time.time() \
+                    and published_entities_missing(ha, chain):
+                last_forced = time.time()
+                next_chain = 0.0
+                log.info("senzori publicați lipsă din HA (repornire?): republicare imediată")
         except Exception as exc:  # noqa: BLE001
             last_err = f"poll: {exc}"
             log.warning("%s", last_err)

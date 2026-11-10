@@ -1,6 +1,7 @@
 """Client minimal pentru Home Assistant Core API (via Supervisor proxy). Doar stdlib."""
 import json
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -23,6 +24,17 @@ class HA:
 
     def state(self, entity_id):
         return self._get("/states/" + entity_id)
+
+    def exists(self, entity_id):
+        """True dacă entitatea există în HA; False la 404 (ex. senzor publicat prin REST, pierdut la repornirea HA).
+        Orice altă eroare (502 cât HA pornește, timeout) se propagă: nu știm nimic despre entitate."""
+        try:
+            self._get("/states/" + entity_id)
+            return True
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return False
+            raise
 
     def history(self, entity_id, start_iso, end_iso):
         """Lista de stări (cu atribute) ale unei entități, în ordine cronologică."""

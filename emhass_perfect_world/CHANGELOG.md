@@ -1,3 +1,6 @@
+## 0.9.4
+- După repornirea HA, senzorii publicați prin REST (`..._scoreboard`, `..._experiments`) dispăreau până la următorul ciclu de 300 s (cardurile arătau „în așteptare”). Acum bucla de poll verifică la fiecare 30 s că senzorii există (404 → lipsă) și republică imediat; cel mult o dată pe minut. Erorile 502/timeout cât HA pornește nu declanșează nimic.
+
 ## 0.9.3
 - Δ pe toate sloturile: fără „-0,000” în dashboard.
 
