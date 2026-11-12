@@ -78,7 +78,8 @@ class T(unittest.TestCase):
         ids = [v["id"] for v in experiments.VARIANTS]
         self.assertEqual(len(ids), len(set(ids)))
         for v in experiments.VARIANTS:
-            self.assertGreaterEqual(v["soc_final"], 0.2)                    # sub 20% Pilotul nu mai majorează comenzile
+            # sf0_r0 (0, tiparul EMHASS pentru MPC rulant) e intenționat sub 0,2; sub 20% Pilotul nu mai majorează comenzile peste plan
+            self.assertGreaterEqual(v["soc_final"], 0.0)
             self.assertLessEqual(v["reward"], 1.0)                         # >0,7 testează explicit riscul de arbitraj cu încărcare din rețea
             self.assertEqual(experiments.overrides(v), {"battery_soc_final_reward_factor": v["reward"]})
 

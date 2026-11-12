@@ -1,3 +1,6 @@
+## 0.9.5
+- Variantă experimentală nouă `sf0_r0` (`soc_final` 0, recompensă 0): tiparul din documentația EMHASS pentru MPC rulant (fără țintă efectivă la capătul orizontului). Lanț Perfect World separat, același start și aceeași fizică; producția și scoreboard-ul principal nu se ating. Se calculează de la început (≈745 sloturi) la primele cicluri.
+
 ## 0.9.4
 - După repornirea HA, senzorii publicați prin REST (`..._scoreboard`, `..._experiments`) dispăreau până la următorul ciclu de 300 s (cardurile arătau „în așteptare”). Acum bucla de poll verifică la fiecare 30 s că senzorii există (404 → lipsă) și republică imediat; cel mult o dată pe minut. Erorile 502/timeout cât HA pornește nu declanșează nimic.
 
