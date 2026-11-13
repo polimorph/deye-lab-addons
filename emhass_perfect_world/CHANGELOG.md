@@ -1,3 +1,10 @@
+## 0.10.0
+- Scorare sub decontarea lunară PPC MaxControl (`lab/settlement.py`, funcții pure; reguli confirmate în scris de PPC 09–11.11.2026, aceleași ca Auditorul v0.3.0): compensare kWh contra kWh pe luna calendaristică locală, preț consum cu plafon 0,999 pe interval, regim deficit/surplus, tarife reglementate pe consumul brut, TVA 21%. Parametrii neconfirmați (componenta fixă 0,069 vs 0,095, TG la consum) sunt în `Rules`.
+- Scoreboard: pentru PERFECT, REAL și STOCK_PPC apar `<lume>_settle_*` (`settle_cost_ron`, `settle_value_ron`, `settle_value_inv_at_import_ron`, regim, π̄_c, π̄_inj, import/export de decontare, `settle_exanom_cost_ron` = fără sloturile cu salt de contor) și `settle_delta_vs_real_ron` / `settle_delta_vs_stock_ppc_ron`. Sloturile cu salt de contor SE INCLUD în decontare (se lucrează pe totaluri), spre deosebire de scorarea cash. STOCK_HYDRO_V2 rămâne cash. Energia rămasă în baterie e evaluată la valoarea marginală a regimului (export = prudent, import evitat = limită superioară). Pierderea fixă intră ca import suplimentar, ca în Auditor.
+- Experimente: `<id>_settle_delta_vs_baseline_ron` (sloturi scorate) și `<id>_settle_delta_all_slots_ron` / `..._inv_at_import_ron` (toate sloturile procesate, preț implicit din rândul lanțului la sloturile cu preț completat).
+- Valorile cash existente (`value_ron`, `delta_*`) rămân neschimbate; dashboardul trece pe decontare într-un pas următor, după validarea pe date live (REAL și STOCK_PPC trebuie să reproducă panoul „Contract”).
+- Teste: cifrele din panoul Contract (70,34 / 62,37 RON), exemplele PPC (562,65 / 116,16), împărțire pe luni, regimuri, valori marginale, ciclare.
+
 ## 0.9.6
 - Variantă experimentală nouă `sfinit_r0` (`soc_final` = `soc_init`, recompensă 0): al doilea tipar documentat de EMHASS pentru MPC rulant („capăt neutru”). La fiecare solve ținta finală e SOC-ul de la începutul acelui solve (`perfect.resolve_soc_final`). Lanț Perfect World separat, doar în laborator; se calculează de la început, iar tabelul comun se scurtează temporar până ajunge din urmă.
 

@@ -5,7 +5,7 @@ sloturile deja evaluate în Perfect World: comparație pe aceeași perioadă."""
 import json
 import os
 
-from . import physics
+from . import physics, settlement
 from .schema import num
 
 PHYS = physics.MEASURED   # aceeași fizică în Perfect World, replay STOCK și inventar
@@ -51,7 +51,28 @@ def _pct(v):
     return num(v)
 
 
-def summarize(chain_rows, archive_by_epoch, loss_kwh, emhass_version, stock=None, phys=PHYS):
+def _settle_worlds(rows, archive_by_epoch, stock, loss_kwh, rules, include_anomaly):
+    """Decontare lunară PPC pentru PERFECT, REAL și STOCK_PPC pe aceleași sloturi ca scorarea cash. Spre deosebire de
+    scorarea cash, sloturile cu salt de contor se INCLUD implicit: decontarea lunară lucrează pe totaluri, iar contorul a
+    recuperat energie reală cu întârziere (vezi Auditor v0.3.0). STOCK_HYDRO_V2 rămâne în afara regulilor PPC."""
+    sl = {"PERFECT": [], "REAL": [], "STOCK_PPC": []}
+    for r in rows:
+        e = r["slot_start_epoch"]
+        a, st = archive_by_epoch.get(e), stock.get(e)
+        if a is None or st is None or _num(a.get("ppc_import_price_ron_kwh")) <= 0:
+            continue
+        if not include_anomaly and counter_anomaly(a):
+            continue
+        pe = _num(a.get("ppc_export_price_ron_kwh"))
+        sl["PERFECT"].append((e, r["import_kwh"], r["export_kwh"], pe))
+        sl["REAL"].append((e, _num(a.get("actual_grid_import_kwh")), _num(a.get("actual_grid_export_kwh")), pe))
+        sl["STOCK_PPC"].append((e, st["import"], st["export"], pe))
+    # pierderea fixă lipsește din replay-ul STOCK și din Perfect World, dar e deja în contorul lumii REAL
+    return {k: settlement.settle_months(v, rules, 0.0 if k == "REAL" else loss_kwh) for k, v in sl.items()}
+
+
+def summarize(chain_rows, archive_by_epoch, loss_kwh, emhass_version, stock=None, phys=PHYS,
+              rules=settlement.DEFAULT_RULES):
     """chain_rows: rânduri Perfect World (non-skipped, scored). Returnează dict cu valori pe lume.
     STOCK_* = replay-ul STOCK din laborator (physics.stock_replay) cu fizica `phys`, nu valorile `stock_*` din arhivă
     (acelea folosesc eficiențele vechi ale auditorului)."""
@@ -119,6 +140,23 @@ def summarize(chain_rows, archive_by_epoch, loss_kwh, emhass_version, stock=None
             "import_kwh": round(v["imp"], 3), "export_kwh": round(v["exp"], 3),
             "soc_end_pct": None if soc[k] is None else round(soc[k], 1),
         }
+    sets = _settle_worlds(rows, archive_by_epoch, stock, loss_kwh, rules, True)
+    sets_x = _settle_worlds(rows, archive_by_epoch, stock, loss_kwh, rules, False)
+    for k, sm in sets.items():
+        if sm is None:
+            continue
+        # energia rămasă în baterie față de REAL (kWh la ieșirea AC), evaluată la valoarea marginală a regimului lumii
+        e_kwh = 0.0 if k == "REAL" else _inv(soc_real, soc[k], soc_real0, soc0[k], 1.0, phys)
+        sx = sets_x.get(k)
+        out[k].update({
+            "settle_cost_ron": round(sm["cost_ron"], 3),
+            "settle_value_ron": round(-sm["cost_ron"] - e_kwh * sm["v_export"], 3),
+            "settle_value_inv_at_import_ron": round(-sm["cost_ron"] - e_kwh * sm["v_import"], 3),
+            "settle_regime": sm["regime"], "settle_month": sm["month"], "settle_balance_kwh": round(sm["balance_kwh"], 3),
+            "settle_import_kwh": round(sm["import_kwh"], 3), "settle_export_kwh": round(sm["export_kwh"], 3),
+            "settle_pi_c": round(sm["pi_c"], 4), "settle_pi_inj": round(sm["pi_inj"], 4),
+            "settle_exanom_cost_ron": None if sx is None else round(sx["cost_ron"], 3),
+        })
     return {
         "emhass_version": emhass_version, "era": f"emhass-{emhass_version}",
         "slots_counted": n, "excluded_counter_anomaly_slots": len(excluded),
@@ -129,13 +167,24 @@ def summarize(chain_rows, archive_by_epoch, loss_kwh, emhass_version, stock=None
         "value_ron": out["PERFECT"]["value_ron"],
         "delta_vs_real_ron": round(out["PERFECT"]["value_ron"] - out["REAL"]["value_ron"], 3),
         "delta_vs_stock_ppc_ron": round(out["PERFECT"]["value_ron"] - out["STOCK_PPC"]["value_ron"], 3),
+        "settle_delta_vs_real_ron": _sdelta(out, "PERFECT", "REAL"),
+        "settle_delta_vs_stock_ppc_ron": _sdelta(out, "PERFECT", "STOCK_PPC"),
+        "settle_rules": {"vat": rules.vat, "cap": rules.cap, "regulated": rules.regulated, "fixed": rules.fixed,
+                         "tg_on_consumption": rules.tg_on_consumption},
         "method": "LAB_SEQUENTIAL_MPC_REAL_PV_LOAD_SAME_PERIOD",
     }
 
 
+def _sdelta(out, a, b):
+    if "settle_value_ron" not in out[a] or "settle_value_ron" not in out[b]:
+        return None
+    return round(out[a]["settle_value_ron"] - out[b]["settle_value_ron"], 3) + 0.0
+
+
 def flatten(s):
     """Atribute plate pentru dashboard (HA nu randează ușor dict-uri imbricate)."""
-    a = {k: v for k, v in s.items() if k not in ("worlds", "value_ron")}
+    a = {k: v for k, v in s.items() if k not in ("worlds", "value_ron", "settle_rules")}
+    a.update({f"settle_rule_{k}": v for k, v in s.get("settle_rules", {}).items()})
     for name, d in s["worlds"].items():
         for k, v in d.items():
             a[f"{name.lower()}_{k}"] = v
@@ -187,6 +236,46 @@ def _delta_all_slots(base_rows, var_rows, archive_by_epoch, loss_kwh, phys=PHYS)
     }
 
 
+def _pe_for(a, rows):
+    """Preț de export (PZU−TG, min 0) al slotului. Arhiva îl are când prețurile sunt valide (0 = PZU−TG ≤ 0, valid). La
+    sloturile cu preț completat (arhiva fără preț) îl deducem din rândurile lanțului, care au rulat cu prețul completat."""
+    if _num(a.get("ppc_import_price_ron_kwh")) > 0:
+        return _num(a.get("ppc_export_price_ron_kwh"))
+    for r in rows:
+        if r["export_kwh"] > 1e-9 and r["net_cost_ron"] < 0:
+            return -r["net_cost_ron"] / r["export_kwh"]
+    for r in rows:   # doar import: PPC import = (min(pe, plafon) + 0,5754632) · 1,21 => pe (aproximare sub plafon)
+        if r["import_kwh"] > 1e-9 and r["net_cost_ron"] > 0:
+            return max(r["net_cost_ron"] / r["import_kwh"] / 1.21 - 0.5754632, 0.0)
+    return None
+
+
+def _delta_all_slots_settlement(base_rows, var_rows, archive_by_epoch, loss_kwh, rules=settlement.DEFAULT_RULES, phys=PHYS):
+    """Δ variantă − referință sub decontarea lunară PPC, pe TOATE sloturile procesate de ambele lanțuri (aceleași motive ca la
+    _delta_all_slots). Energia rămasă în baterie se evaluează la valoarea marginală a regimului referinței: la export
+    (prudent) și la import evitat (limită superioară). Pozitiv = varianta câștigă."""
+    ok = lambda rows: {r["slot_start_epoch"]: r for r in rows if not r.get("skipped")}
+    b, v = ok(base_rows), ok(var_rows)
+    sb, sv, last = [], [], None
+    for e in sorted(set(b) & set(v)):
+        pe = _pe_for(archive_by_epoch.get(e) or {}, (b[e], v[e]))
+        if pe is None:
+            continue
+        sb.append((e, b[e]["import_kwh"], b[e]["export_kwh"], pe))
+        sv.append((e, v[e]["import_kwh"], v[e]["export_kwh"], pe))
+        last = (b[e], v[e])
+    if last is None:
+        return {}
+    rb, rv = settlement.settle_months(sb, rules, loss_kwh), settlement.settle_months(sv, rules, loss_kwh)
+    d_kwh = (last[0]["soc_end"] - last[1]["soc_end"]) * phys.capacity_kwh * phys.eta_discharge_to_ac
+    d_cost = rv["cost_ron"] - rb["cost_ron"]
+    return {
+        "settle_delta_all_slots_ron": round(-d_cost - d_kwh * rb["v_export"], 3) + 0.0,
+        "settle_delta_all_slots_inv_at_import_ron": round(-d_cost - d_kwh * rb["v_import"], 3) + 0.0,
+        "settle_regime_ref": rb["regime"],
+    }
+
+
 def summarize_experiments(main_rows, variants, archive_by_epoch, loss_kwh, emhass_version):
     """Variante experimentale (soc_final / recompensă) față de Perfect World principal, pe ACELEAȘI sloturi.
     variants: listă de (meta_dict, rânduri_lanț). Nu intră în scoreboard-ul principal."""
@@ -213,9 +302,12 @@ def summarize_experiments(main_rows, variants, archive_by_epoch, loss_kwh, emhas
             delta_vs_baseline_ron=round(w["value_ron"] - bw["value_ron"], 3),
             delta_vs_baseline_inv_at_import_ron=round(w["value_inv_at_import_ron"] - bw["value_inv_at_import_ron"], 3),
         )
+        if "settle_value_ron" in w and "settle_value_ron" in bw:
+            out[meta["id"]]["settle_delta_vs_baseline_ron"] = round(w["settle_value_ron"] - bw["settle_value_ron"], 3) + 0.0
     for meta, rows in variants:                     # Δ pe TOATE sloturile procesate (vezi _delta_all_slots)
         if meta["id"] in out:
             out[meta["id"]].update(_delta_all_slots(main_rows, rows, archive_by_epoch, loss_kwh))
+            out[meta["id"]].update(_delta_all_slots_settlement(main_rows, rows, archive_by_epoch, loss_kwh))
     return {
         "emhass_version": emhass_version, "slots_counted": base["slots_counted"],
         "from_slot_epoch": base["from_slot_epoch"], "through_slot_epoch": base["through_slot_epoch"],
