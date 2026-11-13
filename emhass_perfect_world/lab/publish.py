@@ -71,8 +71,34 @@ def _settle_worlds(rows, archive_by_epoch, stock, loss_kwh, rules, include_anoma
     return {k: settlement.settle_months(v, rules, 0.0 if k == "REAL" else loss_kwh) for k, v in sl.items()}
 
 
+def panel_window(archive_by_epoch, stock, loss_kwh, from_epoch, rules=settlement.DEFAULT_RULES):
+    """Paritate cu panoul „Deye Economics · Contract”: REAL și STOCK_PPC (+pierdere fixă) pe TOATE sloturile din arhivă de la
+    `from_epoch` până la ultimul, independent de lanțul Perfect World (care rămâne în urmă ~1 zi). Cifrele trebuie să
+    coincidă cu ACTUAL / STOCK+L din panou (diferențe mici: replay-ul STOCK pornește din arhivă, nu din SOC-ul de reset)."""
+    sl = {"REAL": [], "STOCK_PPC": []}
+    for e in sorted(archive_by_epoch):
+        a, st = archive_by_epoch[e], stock.get(e)
+        if e < from_epoch or st is None or _num(a.get("ppc_import_price_ron_kwh")) <= 0:
+            continue
+        pe = _num(a.get("ppc_export_price_ron_kwh"))
+        sl["REAL"].append((e, _num(a.get("actual_grid_import_kwh")), _num(a.get("actual_grid_export_kwh")), pe))
+        sl["STOCK_PPC"].append((e, st["import"], st["export"], pe))
+    out = {"from_epoch": from_epoch, "slots": len(sl["REAL"])}
+    if not sl["REAL"]:
+        return out
+    out["through_epoch"] = sl["REAL"][-1][0]
+    for k, v in sl.items():
+        sm = settlement.settle_months(v, rules, 0.0 if k == "REAL" else loss_kwh)
+        out[k.lower()] = {"cost_ron": round(sm["cost_ron"], 3), "regime": sm["regime"],
+                          "balance_kwh": round(sm["balance_kwh"], 3), "import_kwh": round(sm["import_kwh"], 3),
+                          "export_kwh": round(sm["export_kwh"], 3), "pi_c": round(sm["pi_c"], 4),
+                          "pi_inj": round(sm["pi_inj"], 4)}
+    out["emhass_value_ron"] = round(out["stock_ppc"]["cost_ron"] - out["real"]["cost_ron"], 3) + 0.0
+    return out
+
+
 def summarize(chain_rows, archive_by_epoch, loss_kwh, emhass_version, stock=None, phys=PHYS,
-              rules=settlement.DEFAULT_RULES):
+              rules=settlement.DEFAULT_RULES, ref_from_epoch=None):
     """chain_rows: rânduri Perfect World (non-skipped, scored). Returnează dict cu valori pe lume.
     STOCK_* = replay-ul STOCK din laborator (physics.stock_replay) cu fizica `phys`, nu valorile `stock_*` din arhivă
     (acelea folosesc eficiențele vechi ale auditorului)."""
@@ -169,6 +195,7 @@ def summarize(chain_rows, archive_by_epoch, loss_kwh, emhass_version, stock=None
         "delta_vs_stock_ppc_ron": round(out["PERFECT"]["value_ron"] - out["STOCK_PPC"]["value_ron"], 3),
         "settle_delta_vs_real_ron": _sdelta(out, "PERFECT", "REAL"),
         "settle_delta_vs_stock_ppc_ron": _sdelta(out, "PERFECT", "STOCK_PPC"),
+        "panel_window": None if ref_from_epoch is None else panel_window(archive_by_epoch, stock, loss_kwh, ref_from_epoch, rules),
         "settle_rules": {"vat": rules.vat, "cap": rules.cap, "regulated": rules.regulated, "fixed": rules.fixed,
                          "tg_on_consumption": rules.tg_on_consumption},
         "method": "LAB_SEQUENTIAL_MPC_REAL_PV_LOAD_SAME_PERIOD",
@@ -183,7 +210,13 @@ def _sdelta(out, a, b):
 
 def flatten(s):
     """Atribute plate pentru dashboard (HA nu randează ușor dict-uri imbricate)."""
-    a = {k: v for k, v in s.items() if k not in ("worlds", "value_ron", "settle_rules")}
+    a = {k: v for k, v in s.items() if k not in ("worlds", "value_ron", "settle_rules", "panel_window")}
+    pw = s.get("panel_window") or {}
+    for k, v in pw.items():
+        if isinstance(v, dict):
+            a.update({f"panel_{k}_{kk}": vv for kk, vv in v.items()})
+        else:
+            a[f"panel_{k}"] = v
     a.update({f"settle_rule_{k}": v for k, v in s.get("settle_rules", {}).items()})
     for name, d in s["worlds"].items():
         for k, v in d.items():

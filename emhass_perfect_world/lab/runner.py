@@ -113,7 +113,7 @@ def run_chain(opts, archive, chain, tz, emhass_version):
     return n
 
 
-def publish_scoreboard(ha, archive, chain, tz, emhass_version):
+def publish_scoreboard(ha, archive, chain, tz, emhass_version, chain_start_iso=None):
     """Cumul pe aceeași perioadă pentru toate lumile -> results/scoreboard.json + senzor HA (republicat periodic)."""
     rows = [r for d in archive.days() for r in chain.read_slots(d)]
     by_epoch = {r["slot_start_epoch"]: r for d in archive.days() for r in archive.read_day(d)}
@@ -121,7 +121,9 @@ def publish_scoreboard(ha, archive, chain, tz, emhass_version):
         loss = float(ha.state(publish.LOSS_ENTITY)["attributes"].get("loss_kwh_per_slot", publish.DEFAULT_LOSS))
     except Exception:  # noqa: BLE001 — L implicit dacă acumulatorul v0.2.7 lipsește
         loss = publish.DEFAULT_LOSS
-    s = publish.summarize(rows, by_epoch, loss, emhass_version)
+    # Auditorul a pornit la 15:00; lanțul la chain_start (15:15) => panoul începe cu un slot înainte
+    ref_from = int(datetime.fromisoformat(chain_start_iso or DEFAULTS["chain_start"]).timestamp()) // 900 * 900 - 900
+    s = publish.summarize(rows, by_epoch, loss, emhass_version, ref_from_epoch=ref_from)
     if s is None:
         # încă niciun slot evaluat (fără provizorii): senzorul există, dar fără valoare
         ha.post_state(publish.ENTITY, "unknown", {
@@ -285,7 +287,7 @@ def main():
             except Exception as exc:  # noqa: BLE001 — lanțul nu trebuie să oprească arhivarea
                 log.warning("chain: %r", exc)
             try:
-                publish_scoreboard(ha, archive, chain, tz, emhass_version)
+                publish_scoreboard(ha, archive, chain, tz, emhass_version, opts["chain_start"])
             except Exception as exc:  # noqa: BLE001
                 log.warning("publish: %r", exc)
             if chain.state is not None:

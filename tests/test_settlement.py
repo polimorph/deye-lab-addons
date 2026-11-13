@@ -170,3 +170,21 @@ class ExperimentsDelta(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_panel_window_independent_of_chain_and_flatten():
+    """panel_window pornește de la from_epoch, include sloturile cu salt de contor și apare în atributele plate."""
+    from emhass_perfect_world.lab import publish
+    arch = {}
+    stock = {}
+    for i in range(8):
+        e = 1000000 + 900 * i
+        arch[e] = {"ppc_import_price_ron_kwh": 1.5, "ppc_export_price_ron_kwh": 0.5,
+                   "actual_grid_import_kwh": 1.0, "actual_grid_export_kwh": 0.5}
+        stock[e] = {"import": 0.5, "export": 0.2}
+    pw = publish.panel_window(arch, stock, 0.0, 1000000 + 900 * 2)
+    assert pw["slots"] == 6 and pw["from_epoch"] == 1000000 + 1800
+    assert pw["real"]["import_kwh"] == 6.0 and pw["stock_ppc"]["export_kwh"] == 1.2
+    assert pw["emhass_value_ron"] == round(pw["stock_ppc"]["cost_ron"] - pw["real"]["cost_ron"], 3)
+    flat = publish.flatten({"worlds": {}, "settle_rules": {}, "panel_window": pw})
+    assert flat["panel_real_cost_ron"] == pw["real"]["cost_ron"] and flat["panel_slots"] == 6
