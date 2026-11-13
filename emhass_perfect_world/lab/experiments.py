@@ -16,6 +16,8 @@ VARIANTS = (
     {"id": "sf30_r100", "label": "soc_final 0,3 · recompensă 1,0", "soc_final": 0.3, "reward": 1.0},
     {"id": "sf50_r0", "label": "soc_final 0,5 · recompensă 0", "soc_final": 0.5, "reward": 0.0},
     # Tiparul din documentația EMHASS pentru MPC rulant: soc_final 0 = fără țintă efectivă la capătul orizontului.
+    # Celălalt tipar documentat de EMHASS pentru MPC rulant: capăt „neutru” (SOC la final = SOC la început, la fiecare solve).
+    {"id": "sfinit_r0", "label": "soc_final = soc_init · recompensă 0", "soc_final": "init", "reward": 0.0},
     {"id": "sf0_r0", "label": "soc_final 0 · recompensă 0", "soc_final": 0.0, "reward": 0.0},
 )
 REWARD_KEY = "battery_soc_final_reward_factor"

@@ -94,6 +94,14 @@ def realize(first, slot0, soc0, phys=physics.MEASURED):
     }
 
 
+SOC_FINAL_INIT = "init"   # soc_final = soc_init: capătul orizontului ține SOC-ul de la începutul fiecărui solve
+
+
+def resolve_soc_final(soc_final, soc_init):
+    """Valoarea numerică a lui soc_final pentru un solve; "init" = chiar soc_init-ul acelui solve."""
+    return round(float(soc_init), 4) if soc_final == SOC_FINAL_INIT else soc_final
+
+
 async def advance(chain, archive, tz, solve_first_row, emhass_version, max_slots=60, log=None, row_extra=None,
                   soc_final=adapter.SOC_FINAL):
     """Rezolvă sloturile al căror orizont e acoperit de arhivă, în ordine. Returnează numărul de sloturi procesate."""
@@ -116,7 +124,8 @@ async def advance(chain, archive, tz, solve_first_row, emhass_version, max_slots
             row = {"slot_start_epoch": s, "skipped": True, "reason": "ARCHIVE_GAP", "emhass_version": emhass_version}
         else:
             soc = min(max(chain.state["soc"], SOC_MIN), SOC_MAX)
-            runtime, latch = adapter.build_runtime(slots, soc, chain.state["curtail"], perfect=True, soc_final=soc_final)
+            runtime, latch = adapter.build_runtime(slots, soc, chain.state["curtail"], perfect=True,
+                                                soc_final=resolve_soc_final(soc_final, soc))
             first = await solve_first_row(runtime)
             row = realize(first, slots[0], soc)
             row.update(

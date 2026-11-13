@@ -1,3 +1,6 @@
+## 0.9.6
+- Variantă experimentală nouă `sfinit_r0` (`soc_final` = `soc_init`, recompensă 0): al doilea tipar documentat de EMHASS pentru MPC rulant („capăt neutru”). La fiecare solve ținta finală e SOC-ul de la începutul acelui solve (`perfect.resolve_soc_final`). Lanț Perfect World separat, doar în laborator; se calculează de la început, iar tabelul comun se scurtează temporar până ajunge din urmă.
+
 ## 0.9.5
 - Variantă experimentală nouă `sf0_r0` (`soc_final` 0, recompensă 0): tiparul din documentația EMHASS pentru MPC rulant (fără țintă efectivă la capătul orizontului). Lanț Perfect World separat, același start și aceeași fizică; producția și scoreboard-ul principal nu se ating. Se calculează de la început (≈745 sloturi) la primele cicluri.
 

@@ -79,9 +79,14 @@ class T(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         for v in experiments.VARIANTS:
             # sf0_r0 (0, tiparul EMHASS pentru MPC rulant) e intenționat sub 0,2; sub 20% Pilotul nu mai majorează comenzile peste plan
-            self.assertGreaterEqual(v["soc_final"], 0.0)
+            self.assertTrue(v["soc_final"] == "init" or v["soc_final"] >= 0.0)
             self.assertLessEqual(v["reward"], 1.0)                         # >0,7 testează explicit riscul de arbitraj cu încărcare din rețea
             self.assertEqual(experiments.overrides(v), {"battery_soc_final_reward_factor": v["reward"]})
+
+    def test_resolve_soc_final(self):
+        self.assertEqual(perfect.resolve_soc_final(0.3, 0.8), 0.3)
+        self.assertEqual(perfect.resolve_soc_final(0.0, 0.8), 0.0)
+        self.assertEqual(perfect.resolve_soc_final("init", 0.123456), 0.1235)
 
     def test_realize_uses_measured_physics_not_planner_belief(self):
         slot = {"ppc_import_price_ron_kwh": 2.0, "ppc_export_price_ron_kwh": 1.0, "pv_actual_kwh": 0.2, "load_kwh": 0.1}
