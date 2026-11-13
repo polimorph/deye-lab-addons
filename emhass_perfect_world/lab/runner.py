@@ -135,7 +135,7 @@ def publish_scoreboard(ha, archive, chain, tz, emhass_version, chain_start_iso=N
     publish.write(chain.dir, s)
     attrs = publish.flatten(s)
     attrs.update(unit_of_measurement="RON", friendly_name="EMHASS MaxControl Perfect World", icon="mdi:crystal-ball")
-    ha.post_state(publish.ENTITY, str(s["value_ron"]), attrs)
+    ha.post_state(publish.ENTITY, str(publish.state_value(s)), attrs)
     return s
 
 

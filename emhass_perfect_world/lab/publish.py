@@ -208,6 +208,13 @@ def _sdelta(out, a, b):
     return round(out[a]["settle_value_ron"] - out[b]["settle_value_ron"], 3) + 0.0
 
 
+def state_value(s):
+    """Starea senzorului scoreboard = valoarea Perfect World sub regulile contractului (decontare), cu cash doar ca rezervă
+    dacă decontarea lipsește; atributele cash rămân disponibile pentru diagnostic."""
+    v = s["worlds"]["PERFECT"].get("settle_value_ron")
+    return s["value_ron"] if v is None else v
+
+
 def flatten(s):
     """Atribute plate pentru dashboard (HA nu randează ușor dict-uri imbricate)."""
     a = {k: v for k, v in s.items() if k not in ("worlds", "value_ron", "settle_rules", "panel_window")}

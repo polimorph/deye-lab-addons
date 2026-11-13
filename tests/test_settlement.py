@@ -188,3 +188,9 @@ def test_panel_window_independent_of_chain_and_flatten():
     assert pw["emhass_value_ron"] == round(pw["stock_ppc"]["cost_ron"] - pw["real"]["cost_ron"], 3)
     flat = publish.flatten({"worlds": {}, "settle_rules": {}, "panel_window": pw})
     assert flat["panel_real_cost_ron"] == pw["real"]["cost_ron"] and flat["panel_slots"] == 6
+
+
+def test_state_value_prefers_settlement():
+    from emhass_perfect_world.lab import publish
+    assert publish.state_value({"value_ron": 5.0, "worlds": {"PERFECT": {"settle_value_ron": -9.5}}}) == -9.5
+    assert publish.state_value({"value_ron": 5.0, "worlds": {"PERFECT": {}}}) == 5.0

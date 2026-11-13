@@ -1,3 +1,6 @@
+## 0.10.2
+- Starea `sensor.emhass_perfect_world_scoreboard` = valoarea Perfect World după regulile contractului (`perfect_settle_value_ron`), nu cash; `value_ron` și restul atributelor cash rămân pentru diagnostic. Dashboardul de audit afișează doar valori de decontare.
+
 ## 0.10.1
 - Paritate cu panoul „Deye Economics · Contract”: atribute `panel_*` pe senzorul scoreboard (REAL și STOCK_PPC+pierdere fixă, decontare lunară PPC, pe TOATE sloturile din arhivă de la resetul Auditorului, independent de lanțul Perfect World): `panel_real_cost_ron`, `panel_stock_ppc_cost_ron`, `panel_emhass_value_ron`, regim, π̄_c, π̄_inj, sloturi. Ținta de validare: ≈70,34 / 62,37 RON la fereastra panoului.
 
