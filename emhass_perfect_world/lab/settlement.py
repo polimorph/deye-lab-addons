@@ -7,8 +7,14 @@ Reguli confirmate în scris de PPC (răspunsul din 09–11.11.2026), aceleași c
   * deficit (C > P): (C−P) se plătește la π̄_c, cu TVA;
   * surplus (P > C): (P−C) se încasează la π̄_inj = media ponderată pe livrare a max(PZU−TG, 0), fără TVA;
   * tarifele reglementate, contribuțiile și accizele se aplică pe consumul BRUT, cu TVA, indiferent de compensare.
-Ipoteze neconfirmate (parametri în `Rules`): componenta fixă 0,069 vs 0,095, scăderea TG la consum, plafonul pe interval,
-contorul facturat. Prima factură PPC este testul final.
+Confirmat de Anexa A a contractului 10494782/12.08.2026 (pct. 1): preț variabil = media ponderată lunară pe consum a PZU pe
+15 min, plafon 0,999 și prag 0 pe interval; componenta fixă 0,095 conține dezechilibre estimate (0,026) „evidențiate distinct
+și scăzute în factură" => 0,069 net; TG se facturează pe linie separată (în `regulated` = 0,5064632 intră și TG 0,00363, ca în
+Auditor). Contor orar: consumul se împarte egal pe cele 4 sferturi. Pct. 2: consumul NEÎNREGISTRAT la 15 min (date
+nereceptionate de la OD, contor defect) se facturează la preț fix 0,620000 RON/kWh; nu se aplică energiei livrate și nu
+înlocuiește un PZU lipsă.
+Încă neconfirmate (parametri în `Rules`): dacă TG se aplică pe consumul brut sau doar pe cel necompensat (efect ~0,3 RON
+pe 78 kWh), contorul facturat. Prima factură PPC este testul final.
 
 Convenție: cost pozitiv = cheltuit. `value` = −cost − inventar (pozitiv = mai bine), ca în scoreboard."""
 from dataclasses import dataclass
