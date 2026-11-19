@@ -68,8 +68,8 @@ def run(data_dir):
     # configul de producție, prin API-ul intern (GET), fără chei sensibile
     for route in ("/get-config", "/get-config/defaults"):
         try:
-            with urllib.request.urlopen(PROD_API + route, timeout=15) as resp:
-                cfg = json.load(resp)
+            from .adapter import prod_get   # cu Bearer din opțiunile add-on-ului de producție
+            cfg = prod_get(route, timeout=15)
             rep["prod" + route.replace("/", "_")] = {k: v for k, v in cfg.items() if not SECRET_KEY.search(k)} \
                 if isinstance(cfg, dict) else cfg
         except Exception as exc:  # noqa: BLE001

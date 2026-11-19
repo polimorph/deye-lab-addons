@@ -17,9 +17,35 @@ SOC_FINAL = 0.3            # ca în producție
 MAX_HORIZON = 192
 
 
-def fetch_prod_config(timeout=15):
-    with urllib.request.urlopen(PROD_API + "/get-config", timeout=timeout) as resp:
+SUPERVISOR_API = "http://supervisor"
+PROD_SLUG = "5b918bf2_emhass"
+
+
+def prod_auth_headers(timeout=10):
+    """EMHASS >= 0.18.10 cere `Authorization: Bearer <token>` pe API (altfel 401, sau 503 dacă tokenul are < 16 caractere).
+    Tokenul se citește la fiecare apel din opțiunile add-on-ului de producție (Supervisor API, `emhass_api_token`),
+    deci laboratorul nu ține o copie și urmărește singur schimbarea tokenului. Fără token configurat -> fără header
+    (EMHASS vechi sau auth oprit). Tokenul nu se loghează și nu se scrie pe disc."""
+    sup = os.environ.get("SUPERVISOR_TOKEN", "")
+    if not sup:
+        return {}
+    req = urllib.request.Request(f"{SUPERVISOR_API}/addons/{PROD_SLUG}/info",
+                                 headers={"Authorization": "Bearer " + sup})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        opts = (json.load(resp).get("data") or {}).get("options") or {}
+    tok = str(opts.get("emhass_api_token") or "").strip()
+    return {"Authorization": "Bearer " + tok} if tok else {}
+
+
+def prod_get(route, timeout=15):
+    """GET JSON de la EMHASS de producție, cu autentificare."""
+    req = urllib.request.Request(PROD_API + route, headers=prod_auth_headers())
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.load(resp)
+
+
+def fetch_prod_config(timeout=15):
+    return prod_get("/get-config", timeout=timeout)
 
 
 async def make_context(data_dir, logger, overrides=None, name="emhass_data"):

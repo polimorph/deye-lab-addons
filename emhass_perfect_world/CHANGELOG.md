@@ -1,3 +1,6 @@
+## 0.10.3
+- Compatibilitate EMHASS ≥ 0.18.10: API-ul cere `Authorization: Bearer <token>` (401 fără header, 503 dacă tokenul configurat are < 16 caractere). `GET /get-config` (adaptor) și rutele din sentinel trimit acum tokenul. Tokenul se citește la fiecare apel din opțiunea `emhass_api_token` a add-on-ului de producție, prin Supervisor API (`/addons/<slug>/info`); laboratorul nu are opțiune proprie, nu ține copie, nu loghează și nu scrie tokenul pe disc. Fără token configurat nu se trimite niciun header. Cauza: din 18.11, lanțul Perfect World și toate experimentele eșuau cu `HTTPError 401`.
+
 ## 0.10.2
 - Starea `sensor.emhass_perfect_world_scoreboard` = valoarea Perfect World după regulile contractului (`perfect_settle_value_ron`), nu cash; `value_ron` și restul atributelor cash rămân pentru diagnostic. Dashboardul de audit afișează doar valori de decontare.
 
